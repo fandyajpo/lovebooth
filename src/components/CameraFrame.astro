@@ -1,0 +1,36 @@
+---
+/**
+ * CameraFrame — a photobooth window, not a video-call tile.
+ */
+
+interface Props {
+  side: 'you' | 'partner';
+  label: string;
+}
+
+const { side, label } = Astro.props;
+---
+
+<figure
+  class:list={['cam', side === 'partner' && 'is-waiting']}
+  data-side={side}
+  data-cam={side}
+>
+  <video
+    id={`video-${side}`}
+    autoplay
+    playsinline
+    muted
+    aria-label={side === 'you' ? 'Your camera preview' : 'Your partner’s camera preview'}
+  ></video>
+
+  <div class="cam__guide" aria-hidden="true"></div>
+
+  <figcaption class="cam__label">{label}</figcaption>
+
+  {side === 'you' && <span class="cam__rec" aria-hidden="true">REC</span>}
+
+  <div class="cam__empty">
+    <span>{side === 'you' ? 'Lens closed' : 'Waiting for partner'}</span>
+  </div>
+</figure>

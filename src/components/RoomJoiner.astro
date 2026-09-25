@@ -1,0 +1,44 @@
+---
+/**
+ * RoomJoiner — one enormous field, because there is one thing to type.
+ */
+---
+
+<section class="screen card" id="screen-join" aria-labelledby="join-title">
+  <header class="card__head">
+    <span>Join a booth</span>
+    <span>2 people</span>
+  </header>
+
+  <form class="card__form" id="join-form" novalidate>
+    <label class="join__label" for="room-input" id="join-title">Enter room code</label>
+
+    <input
+      class="join__input"
+      id="room-input"
+      name="room"
+      type="text"
+      placeholder="7K4P"
+      autocomplete="off"
+      autocapitalize="characters"
+      spellcheck="false"
+      inputmode="text"
+      maxlength="9"
+      aria-describedby="join-msg join-hint"
+      required
+    />
+
+    <p class="join__msg" id="join-msg" role="alert" aria-live="assertive"></p>
+
+    <p class="join__hint" id="join-hint">
+      Letters and numbers — no O, I or L.
+    </p>
+
+    <div class="card__actions card__actions--split">
+      <button class="btn" type="button" data-action="back-home">Back</button>
+      <button class="btn btn--solid" type="submit" id="join-submit">Join room</button>
+    </div>
+  </form>
+
+  <p class="privacy">Photos stay between you and your partner</p>
+</section>

@@ -1,0 +1,121 @@
+---
+import Landing from './Landing.astro';
+import RoomCreator from './RoomCreator.astro';
+import RoomJoiner from './RoomJoiner.astro';
+import CameraPermission from './CameraPermission.astro';
+import ConnectionStatus from './ConnectionStatus.astro';
+import CameraFrame from './CameraFrame.astro';
+import CaptureButton from './CaptureButton.astro';
+import Countdown from './Countdown.astro';
+import PhotoPreview from './PhotoPreview.astro';
+import PhotoStrip from './PhotoStrip.astro';
+import DownloadButton from './DownloadButton.astro';
+
+const frames = [1, 2, 3, 4];
+---
+
+<div class="shell" id="booth-root">
+  <Landing />
+  <RoomCreator />
+  <RoomJoiner />
+  <CameraPermission />
+
+  <section class="screen booth" id="screen-booth" aria-label="Photobooth">
+    <header class="bar">
+      <span class="bar__brand">Photobooth</span>
+      <ConnectionStatus />
+      <div class="bar__tools">
+        <span class="chip chip--room" id="bar-room">····</span>
+        <button
+          class="iconbtn"
+          type="button"
+          id="sound-btn"
+          aria-pressed="false"
+          aria-label="Mute the shutter sound"
+        >
+          <span aria-hidden="true">♪</span>
+        </button>
+      </div>
+    </header>
+
+    <div class="stage">
+      <CameraFrame side="you" label="You" />
+      <CameraFrame side="partner" label="Partner" />
+    </div>
+
+    <div class="rail" id="rail" aria-hidden="true">
+      {
+        frames.map((n) => (
+          <div class="rail__pair" data-pair={n - 1}>
+            <div class="rail__slots">
+              <span class="rail__slot" data-slot="you" data-frame={n - 1} />
+              <span class="rail__slot" data-slot="them" data-frame={n - 1} />
+            </div>
+            <span class="rail__num">{String(n).padStart(2, '0')}</span>
+          </div>
+        ))
+      }
+    </div>
+
+    <div class="deck">
+      <div class="ready" id="ready-row">
+        <div class="ready__col" data-ready="you">
+          <span class="ready__name">You</span>
+          <span class="ready__state">Not ready</span>
+        </div>
+        <div class="ready__col" data-ready="partner">
+          <span class="ready__name">Partner</span>
+          <span class="ready__state">Not ready</span>
+        </div>
+      </div>
+
+      <div class="deck__row">
+        <span class="framecount">
+          <span class="framecount__label">Frame</span>
+          <span class="framecount__value" id="frame-value">01</span>
+        </span>
+        <p class="deck__hint" id="deck-hint">Waiting for your partner</p>
+      </div>
+
+      <CaptureButton />
+
+      <p class="privacy">Photos go straight between you two — never through a server</p>
+    </div>
+
+    <Countdown />
+    <PhotoPreview />
+  </section>
+
+  <section class="screen result" id="screen-result" aria-labelledby="result-title">
+    <p class="eyebrow">Four frames · two people · one strip</p>
+    <h2 class="result__title" id="result-title">Your memory<br />is ready</h2>
+
+    <PhotoStrip />
+
+    <div class="result__actions">
+      <DownloadButton />
+      <button class="btn" type="button" data-action="take-another">Take another</button>
+      <button class="btn btn--ghost" type="button" data-action="new-room">New room</button>
+    </div>
+
+    <p class="privacy">Photos stay between you and your partner</p>
+  </section>
+
+  <section class="screen errorcard" id="screen-error" aria-labelledby="err-title">
+    <p class="eyebrow" id="err-kicker">Something happened</p>
+    <p class="errorcard__mark" aria-hidden="true">✕</p>
+    <h2 id="err-title">The booth paused</h2>
+    <p id="err-body">One moment.</p>
+    <button class="btn btn--solid" type="button" data-action="error-action" id="err-action">
+      Return home
+    </button>
+    <p class="privacy">Photos stay between you and your partner</p>
+  </section>
+</div>
+
+<div class="flash-global" aria-hidden="true"></div>
+
+<script>
+  import '../styles/global.css';
+  import '../scripts/booth';
+</script>

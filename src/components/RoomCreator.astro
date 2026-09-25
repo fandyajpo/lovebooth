@@ -1,0 +1,36 @@
+---
+/**
+ * RoomCreator — the code arrives as a perforated booth receipt.
+ */
+---
+
+<section class="screen card" id="screen-create" aria-labelledby="create-title">
+  <header class="card__head">
+    <span>Booth receipt</span>
+    <span id="create-timestamp">--</span>
+  </header>
+
+  <div class="ticket">
+    <p class="ticket__label" id="create-title">Your room</p>
+    <p class="ticket__code" id="room-code" aria-live="polite">····</p>
+    <p class="ticket__hint">Share this code with your partner</p>
+
+    <div class="perf" aria-hidden="true"></div>
+
+    <p class="ticket__hint">Admit two · no accounts · no uploads</p>
+    <div class="ticket__meta">
+      <span id="create-transport">Peer to peer</span>
+      <span>2 people</span>
+    </div>
+  </div>
+
+  <p class="copied-flag" id="copy-flag" role="status" aria-live="polite"></p>
+  <p class="copied-flag" id="create-status" role="status" aria-live="polite"></p>
+
+  <div class="card__actions card__actions--split">
+    <button class="btn" type="button" data-action="copy-code" id="copy-code">Copy code</button>
+    <button class="btn btn--solid" type="button" data-action="enter-booth">Open the booth</button>
+  </div>
+
+  <p class="privacy">Photos stay between you and your partner</p>
+</section>

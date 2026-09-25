@@ -1,0 +1,29 @@
+---
+/**
+ * CaptureButton — the big tactile key. Label and enabled state are driven
+ * entirely by the state machine in Photobooth.astro.
+ */
+---
+
+<div class="deck__primary">
+  <button
+    class="btn btn--onDark"
+    type="button"
+    id="ready-btn"
+    data-action="set-ready"
+    hidden
+    aria-label="Mark yourself as ready">
+    I’m ready
+  </button>
+
+  <button
+    class="btn btn--accent"
+    type="button"
+    id="capture-btn"
+    data-action="capture"
+    hidden
+    disabled
+    aria-label="Start the synchronized countdown and take a photo">
+    Capture
+  </button>
+</div>

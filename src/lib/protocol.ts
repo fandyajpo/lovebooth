@@ -1,0 +1,66 @@
+/**
+ * Everything that travels between the two booth participants.
+ *
+ * Signaling carries only WebRTC negotiation payloads. After the peer
+ * connection is up, every message below rides the RTCDataChannel — photos
+ * included — so nothing about the booth ever touches a server.
+ */
+
+export type Role = 'host' | 'guest';
+
+export interface OfferSignal {
+  k: 'offer';
+  sdp: RTCSessionDescriptionInit;
+}
+
+export interface AnswerSignal {
+  k: 'answer';
+  sdp: RTCSessionDescriptionInit;
+}
+
+export interface IceSignal {
+  k: 'ice';
+  candidate: RTCIceCandidateInit | null;
+}
+
+export type PeerSignal = OfferSignal | AnswerSignal | IceSignal;
+
+export type BoothMessage =
+  /** First message on a fresh channel: who I am, whether my camera is live. */
+  | { t: 'hello'; role: Role; cameraReady: boolean; session: string }
+  /** Camera hot-plug / permission changes after the handshake. */
+  | { t: 'camera'; ready: boolean; session: string }
+  /**
+   * Clock alignment. The room host pings, the guest answers, the host
+   * publishes `offset = guestClock - hostClock`. Count-down timestamps are
+   * then converted locally so both booths flash on the same instant.
+   */
+  | { t: 'clock'; stage: 'ping' | 'pong' | 'result' | 'need'; t1?: number; t2?: number; offset?: number }
+  /** Explicit ready flag for a given frame. */
+  | { t: 'ready'; frame: number; value: boolean; session: string }
+  /**
+   * The synchronized countdown. `targetAt` is a wall-clock timestamp in the
+   * *initiator's* clock; both peers convert it locally using the measured
+   * clock offset. Never a per-device `setTimeout(3000)`.
+   */
+  | { t: 'capture'; frame: number; session: string; targetAt: number; initiator: Role }
+  /** Header for an incoming chunked photo transfer. */
+  | { t: 'photo-meta'; id: string; frame: number; session: string; mime: string; size: number }
+  /** Trailing signal once every chunk has been flushed. */
+  | { t: 'photo-end'; id: string; frame: number; session: string }
+  /** One side wants to redo the current frame; both must say yes. */
+  | { t: 'retake'; frame: number; session: string }
+  /** Keep the frame as-is and move on now instead of waiting out the hold. */
+  | { t: 'keep'; frame: number; session: string }
+  /** Start a brand new four-frame run. */
+  | { t: 'reset'; session: string }
+  /** Polite goodbye before a tab closes. */
+  | { t: 'bye' };
+
+export function isBoothMessage(value: unknown): value is BoothMessage {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as { t?: unknown }).t === 'string'
+  );
+}

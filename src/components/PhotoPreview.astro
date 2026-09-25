@@ -1,0 +1,42 @@
+---
+/**
+ * PhotoPreview — the frame just taken, held up for a beat before moving on.
+ */
+---
+
+<div class="review" id="review" hidden role="region" aria-label="Photo preview">
+  <div class="review__inner">
+    <p class="review__title">
+      Frame <span id="review-frame">01</span> <span>Complete</span>
+    </p>
+
+    <div class="review__pair">
+      <figure class="review__shot" data-side="you">
+        <img id="review-you" alt="The photo just taken of you" />
+        <figcaption class="review__cap">YOU ✓</figcaption>
+      </figure>
+      <figure class="review__shot" data-side="them">
+        <img id="review-them" alt="The photo your partner just took" />
+        <figcaption class="review__cap">PARTNER ✓</figcaption>
+      </figure>
+    </div>
+
+    <div class="review__actions">
+      <button class="btn btn--paper" type="button" id="keep-btn" data-action="keep">
+        Keep it
+      </button>
+      <button
+        class="btn btn--onDark"
+        type="button"
+        id="retake-btn"
+        data-action="retake"
+        aria-label="Ask your partner to retake this frame">
+        Retake
+      </button>
+    </div>
+
+    <p class="review__status" id="retake-status" role="status" aria-live="polite"></p>
+
+    <p class="review__next" id="review-next">Next frame in 2</p>
+  </div>
+</div>

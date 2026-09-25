@@ -1,0 +1,50 @@
+---
+/**
+ * Landing — the front of the disposable camera.
+ */
+---
+
+<section class="screen landing is-active" id="screen-landing" aria-labelledby="landing-title">
+  <div class="corners" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+
+  <header class="landing__meta">
+    <span>REMOTE · 2 PERSON · BOOTH</span>
+    <span class="rec">REC</span>
+  </header>
+
+  <div class="landing__body">
+    <p class="eyebrow">No. 002 — Two exposures, one print</p>
+
+    <h1 class="landing__title" id="landing-title">
+      <span>Photo</span>
+      <span class="outline">Booth</span>
+    </h1>
+
+    <p class="landing__lede">Two cameras. <em>One little memory.</em></p>
+
+    <div class="landing__actions">
+      <button class="btn btn--solid" type="button" data-action="create-room">Create a room</button>
+      <button class="btn" type="button" data-action="join-room">Join a room</button>
+    </div>
+
+    <div class="landing__resume" id="landing-resume" hidden>
+      <span>Pick up where you left off —</span>
+      <strong id="resume-code">····</strong>
+      <button class="btn btn--solid" type="button" data-action="resume-room">Resume</button>
+    </div>
+  </div>
+
+  <div class="contact-sheet" aria-hidden="true">
+    <span data-n="01"></span>
+    <span data-n="02"></span>
+    <span data-n="03"></span>
+    <span data-n="04"></span>
+  </div>
+
+  <div class="filmstrip" aria-hidden="true"></div>
+
+  <footer class="landing__foot">
+    <p class="privacy">Photos stay between you and your partner</p>
+    <span class="stamp" id="landing-stamp">f/2.8 · ISO 400</span>
+  </footer>
+</section>
