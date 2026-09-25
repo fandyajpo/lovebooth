@@ -41,7 +41,8 @@ export type ErrorKind =
   | 'transport'
   | 'unsupported'
   | 'partner-left'
-  | 'photo-transfer';
+  | 'photo-transfer'
+  | 'strip-missing';
 
 export interface FriendlyError {
   kind: ErrorKind;

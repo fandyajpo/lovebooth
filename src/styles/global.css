@@ -205,6 +205,7 @@ canvas {
   letter-spacing: 0.16em;
   text-transform: uppercase;
   text-align: center;
+  text-decoration: none;
   cursor: pointer;
   user-select: none;
   -webkit-tap-highlight-color: transparent;

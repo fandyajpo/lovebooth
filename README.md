@@ -21,7 +21,7 @@ opens the same URL and types the four-character code.
 | --- | --- |
 | `npm run dev` | dev server |
 | `npm run dev:host` | dev server reachable from other devices on your LAN |
-| `npm run build` / `npm run preview` | static production build / serve it |
+| `npm run build` / `npm run preview` | static production build / serve it (see routes below) |
 | `npm run check` | TypeScript + Astro diagnostics |
 | `npm run verify` | relay protocol + a real two-device session (see below) |
 | `npm run verify:protocol` | relay protocol only — fast, no browser needed |
@@ -103,6 +103,34 @@ working exactly as before until you add them.
 Frames are carried between peers over an ordered, reliable WebRTC data channel in
 16 KB chunks, not through the relay.
 
+## Routes
+
+The app is a handful of routes that all render the same shell; only the screen
+they open on and the address bar differ.
+
+| route | opens on | notes |
+| --- | --- | --- |
+| `/` | landing | `/?room=CODE` redirects here to `/room/CODE` |
+| `/create` | create a booth | creates a room, then rewrites to `/room/CODE` |
+| `/room` | join form | pick a code by hand |
+| `/room/CODE` | join form | code prefilled; shareable, reload-safe |
+| `/strip` | result | replays a cached strip; without one it explains itself |
+
+The address is the product: `/room/CODE` is what you paste to your partner, and it
+survives a reload mid-run — the frames and the finished strip are cached in
+`sessionStorage` (`pb:frames`, `pb:strip`).
+
+The rewrite is wired twice, because dev and production serve differently:
+
+- **dev** — a Vite plugin in `astro.config.mjs` rewrites `/room/:code` before Astro
+  routes it.
+- **production** — `vercel.json` does the same after the filesystem has been
+  checked.
+
+`npm run preview` applies neither, so `/room/CODE` 404s under `preview`; use the
+dev server, or deploy. `npm run verify`'s `routes` section exercises this against
+`ORIGIN` and expects the rewrite to work.
+
 ## Privacy
 
 - Photos are captured to a canvas, shown as data URLs, and composed in the browser.
@@ -116,7 +144,12 @@ Frames are carried between peers over an ordered, reliable WebRTC data channel i
 
 ```
 src/
-  pages/index.astro        entry, fonts, favicon
+  pages/                 one route per page, all sharing layouts/Base.astro
+    index.astro            /
+    create.astro           /create
+    room.astro             /room
+    strip.astro            /strip
+  layouts/Base.astro      head, shell, pre-boot screen selection
   components/              Photobooth shell + each screen/widget
   scripts/booth.ts         orchestrator: state ⇄ DOM, room, frames, review
   lib/
@@ -132,6 +165,8 @@ src/
     sound.ts               ticks, shutter, chime
     room.ts                room-code generation
   styles/global.css        the whole visual system
+astro.config.mjs           dev rewrite for /room/:code
+vercel.json                production rewrite for /room/:code
 relay/
   src/index.js             signaling relay + `GET /ice` (TURN credentials)
   wrangler.jsonc           deploy config
@@ -168,9 +203,11 @@ handshake; after that it is last-write-wins. The pick is saved to
 ## Verification
 
 `npm run check` reports 0 errors. `npm run verify` drives the real thing: the
-signaling relay protocol, then a two-device session across two isolated browser
-contexts — the same code path two separate phones take — asserting that ICE
-servers were fetched, both partner streams arrived, and a frame transferred.
+signaling relay protocol, the routes (each opens on the right screen, `/room/CODE`
+is shareable, a developed strip reappears at `/strip`), then a two-device session
+across two isolated browser contexts — the same code path two separate phones take
+— asserting that ICE servers were fetched, both partner streams arrived, a frame
+transferred, and a drop-out and rejoin mid-run agree on which frame is current.
 It also switches the strip style on one device and asserts the other follows,
 then composes all twelve template × theme combinations and checks each renders
 1200 × 1800 with its own paper colour.

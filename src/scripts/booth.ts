@@ -56,6 +56,7 @@ const CONNECT_WATCHDOG = 25_000;
 const SESSION_TTL = 1000 * 60 * 60 * 2;
 const SESSION_KEY = 'pb:session';
 const FRAMES_KEY = 'pb:frames';
+const STRIP_KEY = 'pb:strip';
 
 const COPY: Record<ErrorKind, FriendlyError> = {
   'camera-unsupported': {
@@ -118,6 +119,12 @@ const COPY: Record<ErrorKind, FriendlyError> = {
     body: 'The picture never made it across. Let’s take that frame again.',
     action: 'Try again',
   },
+  'strip-missing': {
+    kind: 'strip-missing',
+    title: 'No strip here',
+    body: 'Strips stay in the tab that developed them — open this on the device that shot it, or start a fresh booth.',
+    action: 'Start a booth',
+  },
 };
 
 /* --------------------------------------------------------------- state --- */
@@ -155,6 +162,8 @@ let lastCountdownNumber = -1;
 let lastFrameIndex = -1;
 let stripCanvas: HTMLCanvasElement | null = null;
 let stripUrl: string | null = null;
+/** Set when the strip was opened from `/strip` — nothing is attached to it. */
+let detachedStrip: string | null = null;
 let errorRetry: (() => void) | null = null;
 let styleOpen = false;
 let styleTrigger: HTMLElement | null = null;
@@ -233,6 +242,8 @@ const el = {
 
   print: $('#print')!,
   stripImg: $('#strip-img') as HTMLImageElement,
+  takeAnotherBtn: $('#take-another-btn') as HTMLButtonElement,
+  resultStyleBtn: $('#result-style-btn') as HTMLButtonElement,
 
   errKicker: $('#err-kicker')!,
   errTitle: $('#err-title')!,
@@ -330,6 +341,12 @@ function render(state: AppState) {
     const index = Number(pair.dataset.pair);
     pair.classList.toggle('is-current', index === state.frameIndex && state.screen === 'booth');
   });
+
+  // A strip opened from `/strip` was developed elsewhere — there is no partner
+  // to re-shoot with and no live peer to sync a restyle to.
+  const detached = state.screen === 'result' && detachedStrip !== null;
+  el.takeAnotherBtn.hidden = detached;
+  el.resultStyleBtn.hidden = detached;
 
   // strip style -----------------------------------------------------------
   el.stylePanel.querySelectorAll<HTMLElement>('[data-template]').forEach((chip) => {
@@ -461,6 +478,12 @@ function leaveSession() {
 
 function goHome() {
   teardownRun();
+  // Everywhere but `/` is a route of its own — going home is a real navigation
+  // so the address bar, the back button and a reload all agree.
+  if (location.pathname !== '/') {
+    location.assign('/');
+    return;
+  }
   store.set({
     ...createInitialState(),
     screen: 'landing',
@@ -607,6 +630,75 @@ function restoreFrames(code: string) {
   paintRail();
 }
 
+interface CachedStrip {
+  code: string | null;
+  dataUrl: string;
+  ts: number;
+}
+
+/**
+ * Park the finished strip so `/strip` can show it again after a reload.
+ *
+ * The result screen normally lives inside a live session with a partner still
+ * attached; this cache is what lets someone bookmark or share the URL of a
+ * strip they already have, with no peer and no reconnection.
+ */
+async function cacheStrip() {
+  try {
+    const canvas = stripCanvas;
+    if (!canvas) return;
+    const blob = await canvasToBlob(canvas, 'image/jpeg', 0.92);
+    const payload: CachedStrip = {
+      code: store.get().roomCode,
+      dataUrl: await blobToDataUrl(blob),
+      ts: Date.now(),
+    };
+    sessionStorage.setItem(STRIP_KEY, JSON.stringify(payload));
+  } catch {
+    /* quota or private mode — the strip just won't survive a reload */
+  }
+}
+
+function readStripCache(): CachedStrip | null {
+  try {
+    const raw = sessionStorage.getItem(STRIP_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as CachedStrip;
+    if (
+      !parsed?.dataUrl ||
+      typeof parsed.ts !== 'number' ||
+      Date.now() - parsed.ts > SESSION_TTL
+    ) {
+      sessionStorage.removeItem(STRIP_KEY);
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function clearStripCache() {
+  try {
+    sessionStorage.removeItem(STRIP_KEY);
+  } catch {
+    /* private mode */
+  }
+}
+
+/** `/strip`: replay a strip this tab already developed, or say why we can't. */
+function openSavedStrip() {
+  const cached = readStripCache();
+  if (!cached) {
+    showError('strip-missing');
+    return;
+  }
+  detachedStrip = cached.dataUrl;
+  store.set({ screen: 'result', state: 'result', roomCode: cached.code, error: null });
+  el.print.dataset.caption = `${cached.code ?? 'BOOTH'} · ${formatStripDate(new Date(cached.ts))}`;
+  el.stripImg.src = cached.dataUrl;
+}
+
 function showResumeIfNeeded() {
   const record = sessionRecord();
   if (!record) {
@@ -643,13 +735,15 @@ async function startCreateRoom() {
     el.createStatus.textContent = 'Waiting for your partner to walk in…';
     el.createTransport.textContent =
       client.mode === 'relay' ? 'Connected · over the internet' : 'Connected · same device';
+    clearStoredFrames();
+    saveSession(code, 'host');
     try {
-      history.replaceState(null, '', `${location.pathname}?room=${code}`);
+      // The address is the product: putting it in the bar makes the code
+      // shareable and a reload rejoin instead of printing a second booth.
+      history.replaceState(null, '', `/room/${code}`);
     } catch {
       /* ignore */
     }
-    clearStoredFrames();
-    saveSession(code, 'host');
     maybeStartPeer();
   } catch (err) {
     signaling?.close();
@@ -716,6 +810,11 @@ async function submitJoin(codeInput: string) {
     });
     saveSession(client.roomCode ?? code, client.role ?? 'guest');
     restoreFrames(client.roomCode ?? code);
+    try {
+      history.replaceState(null, '', `/room/${client.roomCode ?? code}`);
+    } catch {
+      /* ignore */
+    }
     maybeStartPeer();
     return true;
   } catch (err) {
@@ -1561,6 +1660,7 @@ function resetFrames() {
   frames.you.length = 0;
   frames.them.length = 0;
   clearStoredFrames();
+  clearStripCache();
   pendingIncomingCapture = null;
   retake = { frame: -1, you: false, them: false };
   clearStill('you');
@@ -1629,6 +1729,14 @@ async function generateResult() {
     await renderStrip(true);
     store.set({ state: 'result' });
     playChime();
+    void cacheStrip();
+    // The strip is a destination of its own: park the URL here so a reload,
+    // a bookmark or a shared link brings it straight back.
+    try {
+      if (location.pathname !== '/strip') history.replaceState(null, '', '/strip');
+    } catch {
+      /* ignore */
+    }
   } catch {
     showError('photo-transfer', () => store.set({ screen: 'booth', state: 'ready' }));
   }
@@ -1730,14 +1838,22 @@ function restyleStrip() {
 }
 
 async function downloadStrip() {
-  if (!stripCanvas) return;
   const code = store.get().roomCode ?? 'strip';
+  const stamp = new Date().toISOString().slice(0, 10);
   try {
-    const blob = await new Promise<Blob>((resolve, reject) =>
-      stripCanvas!.toBlob((b) => (b ? resolve(b) : reject(new Error('encode'))), 'image/png'),
-    );
-    const stamp = new Date().toISOString().slice(0, 10);
-    downloadBlob(blob, `photobooth-${code}-${stamp}.png`);
+    if (stripCanvas) {
+      const blob = await new Promise<Blob>((resolve, reject) =>
+        stripCanvas!.toBlob((b) => (b ? resolve(b) : reject(new Error('encode'))), 'image/png'),
+      );
+      downloadBlob(blob, `photobooth-${code}-${stamp}.png`);
+      return;
+    }
+    // Opened from `/strip`: there is no canvas, only what the cache holds.
+    if (detachedStrip) {
+      const blob = await (await fetch(detachedStrip)).blob();
+      const ext = blob.type.includes('png') ? 'png' : 'jpg';
+      downloadBlob(blob, `photobooth-${code}-${stamp}.${ext}`);
+    }
   } catch {
     showError('photo-transfer');
   }
@@ -1747,8 +1863,17 @@ function takeAnother() {
   const nextSession = newSessionId();
   peer?.send({ t: 'reset', session: nextSession });
   store.set({ session: nextSession });
+  detachedStrip = null;
   resetFrames();
   store.set({ screen: 'booth', state: 'ready', error: null });
+  const code = store.get().roomCode;
+  if (code) {
+    try {
+      history.replaceState(null, '', `/room/${code}`);
+    } catch {
+      /* ignore */
+    }
+  }
 }
 
 /* ------------------------------------------------------------ lifecycle --- */
@@ -1799,14 +1924,6 @@ function toggleSound() {
 
 function handleAction(action: string, target: HTMLElement) {
   switch (action) {
-    case 'create-room':
-      void startCreateRoom();
-      break;
-    case 'join-room':
-      store.set({ screen: 'join', state: 'joining-room', error: null });
-      el.joinMsg.textContent = '';
-      setTimeout(() => el.roomInput.focus(), 60);
-      break;
     case 'back-home':
       goHome();
       break;
@@ -1978,6 +2095,24 @@ function wireEvents() {
   }
 }
 
+/** Which screen this URL opens on — `/` and `/room/:code` are join flows. */
+function routeScreen(): 'landing' | 'create' | 'join' | 'strip' {
+  const path = location.pathname.replace(/\/+$/, '') || '/';
+  if (path === '/create') return 'create';
+  if (path === '/strip') return 'strip';
+  if (path === '/room' || path.startsWith('/room/')) return 'join';
+  return 'landing';
+}
+
+/** A code carried by `/room/:code`, or by the old `/?room=` links. */
+function routeCode(): string {
+  const path = location.pathname.replace(/\/+$/, '') || '/';
+  const fromPath = path.startsWith('/room/') ? path.slice('/room/'.length) : '';
+  const fromQuery = new URLSearchParams(location.search).get('room') ?? '';
+  const code = normalizeRoomCode(fromPath || fromQuery);
+  return isValidRoomCode(code) ? code : '';
+}
+
 function initialScreen() {
   const stamp = new Date();
   el.landingStamp.textContent = `${String(stamp.getDate()).padStart(2, '0')} ${String(
@@ -1991,16 +2126,31 @@ function initialScreen() {
 
   showResumeIfNeeded();
 
-  const params = new URLSearchParams(location.search);
-  const code = normalizeRoomCode(params.get('room') ?? '');
-  if (isValidRoomCode(code)) {
-    store.set({ screen: 'join', state: 'joining-room' });
-    el.roomInput.value = formatRoomCode(code);
-    setTimeout(() => $('#join-submit')?.focus(), 120);
-  }
-
   store.set({ signalingMode: signalingTransportUrl() ? 'relay' : 'local' });
   renderJoinHint();
+
+  const route = routeScreen();
+  const code = routeCode();
+
+  if (route === 'create') {
+    void startCreateRoom();
+    return;
+  }
+
+  if (route === 'strip') {
+    openSavedStrip();
+    return;
+  }
+
+  if (route === 'join' || isValidRoomCode(code)) {
+    store.set({ screen: 'join', state: 'joining-room' });
+    if (isValidRoomCode(code)) {
+      el.roomInput.value = formatRoomCode(code);
+      setTimeout(() => $('#join-submit')?.focus(), 120);
+    } else {
+      setTimeout(() => el.roomInput.focus(), 120);
+    }
+  }
 }
 
 /** Tell people the local transport only reaches this browser *before* they fail. */

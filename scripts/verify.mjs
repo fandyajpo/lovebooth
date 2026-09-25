@@ -1,7 +1,7 @@
 /**
  * End-to-end verification for the two halves of "can these two devices talk".
  *
- *   npm run verify             relay protocol + a real two-device session
+ *   npm run verify             relay protocol + routes + a two-device session
  *   npm run verify:protocol    relay protocol only (fast, no browser needed)
  *
  * Environment overrides:
@@ -280,6 +280,97 @@ async function styles() {
   }
 }
 
+/* --------------------------------------------------------------- routes -- */
+
+/**
+ * Every route renders the same shell; what differs is which screen it opens on
+ * and what the address bar says. `astro preview` doesn't apply the `/room/:code`
+ * rewrite, so run this against the dev server.
+ */
+async function routes() {
+  section(`routes · ${ORIGIN}`);
+  const puppeteer = (await import('puppeteer-core')).default;
+  const browser = await puppeteer.launch({
+    executablePath: CHROME,
+    headless: 'new',
+    args: [`--unsafely-treat-insecure-origin-as-secure=${ORIGIN}`],
+  });
+
+  try {
+    const page = await browser.newPage();
+    const errors = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+
+    const active = () =>
+      page.$eval('.screen.is-active', (n) => n.id).catch(() => '<none>');
+    const open = async (path) => {
+      await page.goto(new URL(path, ORIGIN).href, { waitUntil: 'domcontentloaded' });
+      await settle(page);
+      return active();
+    };
+
+    check((await open('/')) === 'screen-landing', '/ opens on the landing page');
+    check((await open('/room')) === 'screen-join', '/room opens on the join form');
+    check((await open('/strip')) === 'screen-error', '/strip with nothing cached explains itself');
+
+    await open('/room/TEST');
+    const prefilled = await page.evaluate(() => ({
+      screen: document.querySelector('.screen.is-active')?.id,
+      code: document.querySelector('#room-input')?.value ?? '',
+    }));
+    check(prefilled.screen === 'screen-join', '/room/CODE serves the join form');
+    check(
+      prefilled.code.replace(/\s+/g, '') === 'TEST',
+      `the code is prefilled (${prefilled.code || 'empty'})`,
+    );
+
+    await page.goto(`${ORIGIN}/?room=TEST`, { waitUntil: 'domcontentloaded' });
+    await settle(page);
+    check(new URL(page.url()).pathname === '/room/TEST', `/?room= links redirect (${page.url()})`);
+
+    // A strip this tab developed is still here after a reload.
+    await page.goto(`${ORIGIN}/strip`, { waitUntil: 'domcontentloaded' });
+    await page.evaluate(() =>
+      sessionStorage.setItem(
+        'pb:strip',
+        JSON.stringify({
+          code: 'TEST',
+          dataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+          ts: Date.now(),
+        }),
+      ),
+    );
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await settle(page);
+    const replay = await page.evaluate(() => ({
+      screen: document.querySelector('.screen.is-active')?.id,
+      src: document.querySelector('#strip-img')?.getAttribute('src') ?? '',
+      more: !document.querySelector('#take-another-btn')?.hidden,
+      style: !document.querySelector('#result-style-btn')?.hidden,
+    }));
+    check(replay.screen === 'screen-result', '/strip replays a cached strip');
+    check(replay.src.startsWith('data:image/'), 'the cached image is on screen');
+    check(!replay.more && !replay.style, 'a replayed strip offers no re-shoot or live style');
+
+    // Last, because it opens a room: creating one takes over the address bar.
+    await page.goto(`${ORIGIN}/create`, { waitUntil: 'domcontentloaded' });
+    check((await active()) === 'screen-create', '/create opens on the create card');
+    await page.waitForFunction(
+      () => {
+        const n = document.querySelector('#room-code');
+        return n && /^[A-Z0-9]{4}$/.test((n.textContent ?? '').replace(/[^A-Z0-9]/g, ''));
+      },
+      { polling: 250, timeout: 20000 },
+    );
+    const created = new URL(page.url()).pathname;
+    check(/^\/room\/[A-Z0-9]{4}$/.test(created), `creating a room rewrites to ${created}`);
+
+    check(errors.length === 0, `no page errors${errors.length ? ` → ${errors.join('; ')}` : ''}`);
+  } finally {
+    await browser.close();
+  }
+}
+
 /* -------------------------------------------------------------- session -- */
 
 const settle = async (page) => {
@@ -352,7 +443,20 @@ async function session() {
 
     await host.goto(ORIGIN, { waitUntil: 'domcontentloaded' });
     await settle(host);
-    await click(host, '[data-action="create-room"]');
+    // The landing call to action is a real link now, so it can be shared and
+    // middle-clicked like the room code itself.
+    await Promise.all([
+      host.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 20000 }),
+      click(host, 'a[href="/create"]'),
+    ]);
+    // /create prints a code and immediately rewrites to /room/CODE, so the
+    // address may already have moved on by the time we look.
+    const landed = new URL(host.url()).pathname;
+    check(
+      /^\/(create|room\/[A-Z0-9]{4})$/.test(landed),
+      `the create CTA leaves the landing page (${landed})`,
+    );
+    await settle(host);
     await host.waitForFunction(
       () => {
         const n = document.querySelector('#room-code');
@@ -363,6 +467,10 @@ async function session() {
     const code = await host.$eval('#room-code', (n) =>
       (n.textContent ?? '').replace(/[^A-Za-z0-9]/g, '').toUpperCase(),
     );
+    check(
+      new URL(host.url()).pathname === `/room/${code}`,
+      `the booth address is shareable (/room/${code})`,
+    );
     await click(host, '[data-action="enter-booth"]');
     await settle(host);
     await click(host, '#perm-action');
@@ -370,6 +478,10 @@ async function session() {
 
     await guest.goto(`${ORIGIN}/?room=${code}`, { waitUntil: 'domcontentloaded' });
     await settle(guest);
+    check(
+      new URL(guest.url()).pathname === `/room/${code}`,
+      `/?room= links land on the room route (${guest.url()})`,
+    );
     await click(guest, '#join-submit');
     await guest.waitForSelector('#screen-permission.is-active', { timeout: 20000 });
     await click(guest, '#perm-action');
@@ -547,6 +659,42 @@ async function session() {
     await Promise.all([reaches(host, following), reaches(guest2, following)]);
     check(true, `frame ${following} completed after the rejoin`);
 
+    // Keep shooting: the fourth frame has nowhere to go but the result screen,
+    // which is a route of its own now.
+    const shootAgain = async (next) => {
+      await click(host, '#ready-btn').catch(() => undefined);
+      await new Promise((r) => setTimeout(r, 400));
+      await click(guest2, '#ready-btn').catch(() => undefined);
+      await host.waitForSelector('#capture-btn:not([disabled])', { timeout: 20000 });
+      await click(host, '#capture-btn');
+      await Promise.all([reaches(host, next), reaches(guest2, next)]);
+      check(true, `frame ${next} completed`);
+    };
+
+    await shootAgain(String(Number(following) + 1).padStart(2, '0'));
+
+    await click(host, '#ready-btn').catch(() => undefined);
+    await new Promise((r) => setTimeout(r, 400));
+    await click(guest2, '#ready-btn').catch(() => undefined);
+    await host.waitForSelector('#capture-btn:not([disabled])', { timeout: 20000 });
+    await click(host, '#capture-btn');
+    // The result screen shows up while the strip is still being composed, so
+    // wait for the compose to finish and the address to move with it.
+    const developed = (page) =>
+      page.waitForFunction(
+        () =>
+          location.pathname === '/strip' &&
+          (document.querySelector('#strip-img')?.getAttribute('src') ?? '').startsWith('blob:'),
+        { polling: 250, timeout: 90000 },
+      );
+    await Promise.all([developed(host), developed(guest2)]);
+    check(new URL(host.url()).pathname === '/strip', `the strip has its own address (${host.url()})`);
+    check(true, 'the strip is on screen');
+    check(
+      await host.$eval('#take-another-btn', (n) => !n.hidden),
+      'a live strip still offers Take another',
+    );
+
     check(errors.length === 0, `no page errors${errors.length ? ` → ${errors.join('; ')}` : ''}`);
   } finally {
     await browser.close();
@@ -556,6 +704,7 @@ async function session() {
 const args = process.argv.slice(2);
 await protocol();
 if (!args.includes('--protocol-only')) {
+  await routes();
   await session();
   await styles();
 }
