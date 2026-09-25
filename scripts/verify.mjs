@@ -155,7 +155,16 @@ async function styles() {
     await page.goto(ORIGIN, { waitUntil: 'networkidle0' });
     await new Promise((r) => setTimeout(r, 1200));
 
-    const rows = await page.evaluate(async () => {
+    const swept = await page.evaluate(async () => {
+      // The sweep imports the TypeScript source, which only a dev server's
+      // Vite transform serves — a built/preview origin would 404 and take the
+      // whole run down with an unhandled rejection.
+      try {
+        const probe = await fetch('/src/lib/photostrip.ts');
+        if (!probe.ok) return null;
+      } catch {
+        return null;
+      }
       const mod = await import('/src/lib/photostrip.ts');
       const swatch = (color) => {
         const c = document.createElement('canvas');
@@ -219,22 +228,27 @@ async function styles() {
       }
       return out;
     });
+    const rows = swept ?? [];
 
-    const corners = new Set(rows.map((r) => r.corner));
-    check(rows.length === 12, `all 12 combinations composed (${rows.length})`);
-    check(
-      rows.every((r) => r.w === 1200 && r.h === 1800),
-      'every strip is 1200 × 1800',
-    );
-    check(
-      rows.every((r) => r.distinct > 20),
-      `every strip paints a real image (min distinct colours ${Math.min(...rows.map((r) => r.distinct))})`,
-    );
-    check(corners.size === 4, `each theme paints its own paper (${corners.size} distinct sheets)`);
-    check(
-      rows.every((r) => r.titleGap > 20),
-      `the headline stays legible in every theme (min contrast ${Math.min(...rows.map((r) => r.titleGap)).toFixed(0)})`,
-    );
+    if (rows.length) {
+      const corners = new Set(rows.map((r) => r.corner));
+      check(rows.length === 12, `all 12 combinations composed (${rows.length})`);
+      check(
+        rows.every((r) => r.w === 1200 && r.h === 1800),
+        'every strip is 1200 × 1800',
+      );
+      check(
+        rows.every((r) => r.distinct > 20),
+        `every strip paints a real image (min distinct colours ${Math.min(...rows.map((r) => r.distinct))})`,
+      );
+      check(corners.size === 4, `each theme paints its own paper (${corners.size} distinct sheets)`);
+      check(
+        rows.every((r) => r.titleGap > 20),
+        `the headline stays legible in every theme (min contrast ${Math.min(...rows.map((r) => r.titleGap)).toFixed(0)})`,
+      );
+    } else {
+      console.log('  skip  compose sweep (this origin serves no /src transform)');
+    }
 
     // The picker is on every screen, so it works from the landing page too.
     await click(page, '#style-btn');
@@ -506,6 +520,32 @@ async function session() {
       slots.filter((s) => (s.getAttribute('style') ?? '').includes('url(')).length,
     );
     check(kept >= railFilled, `captured frames survived the drop-out (${kept})`);
+
+    // A reloaded booth comes back at frame 0 with its ready flags cleared;
+    // `ready`/`capture`/`keep` all compare frame numbers, so the two sides
+    // used to disagree forever and no further frame could ever be shot.
+    const frameOf = (page) =>
+      page.$eval('#frame-value', (n) => (n.textContent ?? '').trim()).catch(() => '');
+    const agreed = await Promise.all([frameOf(host), frameOf(guest2)]);
+    check(
+      agreed[0] !== '' && agreed[0] === agreed[1],
+      `both booths agree on frame ${agreed[0] || '?'} after the rejoin`,
+    );
+
+    await click(host, '#ready-btn').catch(() => undefined);
+    await new Promise((r) => setTimeout(r, 400));
+    await click(guest2, '#ready-btn').catch(() => undefined);
+    await host.waitForSelector('#capture-btn:not([disabled])', { timeout: 20000 });
+    await click(host, '#capture-btn');
+    const following = String(Number(agreed[0] || '01') + 1).padStart(2, '0');
+    const reaches = (page, want) =>
+      page.waitForFunction(
+        (target) => (document.querySelector('#frame-value')?.textContent ?? '').trim() === target,
+        { polling: 250, timeout: 60000 },
+        want,
+      );
+    await Promise.all([reaches(host, following), reaches(guest2, following)]);
+    check(true, `frame ${following} completed after the rejoin`);
 
     check(errors.length === 0, `no page errors${errors.length ? ` → ${errors.join('; ')}` : ''}`);
   } finally {

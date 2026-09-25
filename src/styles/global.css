@@ -1766,6 +1766,9 @@ canvas {
 .print img {
   width: 100%;
   height: auto;
+  /* Reserve the 2:3 box before the PNG arrives, or the result screen jumps. */
+  aspect-ratio: 2 / 3;
+  background: var(--paper);
   border: 1px solid rgba(20, 18, 14, 0.25);
 }
 

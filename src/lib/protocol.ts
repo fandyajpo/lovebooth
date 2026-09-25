@@ -31,9 +31,21 @@ export type BoothMessage =
   /**
    * First message on a fresh channel: who I am, whether my camera is live,
    * and which strip style I currently have selected — a peer that joins (or
-   * rejoins) late adopts the style already in play.
+   * rejoins) late adopts the style already in play. `frame` and `done` say how
+   * far along this booth is, so one that reloads mid-run can be moved back to
+   * the frame the other is still on instead of deadlocking on mismatched
+   * frame numbers.
    */
-  | { t: 'hello'; role: Role; cameraReady: boolean; session: string; template: TemplateId; theme: ThemeId }
+  | {
+      t: 'hello';
+      role: Role;
+      cameraReady: boolean;
+      session: string;
+      frame: number;
+      done: boolean;
+      template: TemplateId;
+      theme: ThemeId;
+    }
   /** Either side restyled the strip; last write wins. */
   | { t: 'style'; template: TemplateId; theme: ThemeId }
   /** Camera hot-plug / permission changes after the handshake. */

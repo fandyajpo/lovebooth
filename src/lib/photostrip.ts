@@ -82,6 +82,32 @@ function withAlpha(hex: string, alpha: number): string {
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
 }
 
+/** Adds a rounded rect to the current path — `roundRect` is missing pre-Safari 16. */
+function pathRoundedRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number,
+): void {
+  const radius = Math.max(0, Math.min(r, w / 2, h / 2));
+  if (typeof ctx.roundRect === 'function') {
+    ctx.roundRect(x, y, w, h, radius);
+    return;
+  }
+  ctx.moveTo(x + radius, y);
+  ctx.lineTo(x + w - radius, y);
+  ctx.arcTo(x + w, y, x + w, y + radius, radius);
+  ctx.lineTo(x + w, y + h - radius);
+  ctx.arcTo(x + w, y + h, x + w - radius, y + h, radius);
+  ctx.lineTo(x + radius, y + h);
+  ctx.arcTo(x, y + h, x, y + h - radius, radius);
+  ctx.lineTo(x, y + radius);
+  ctx.arcTo(x, y, x + radius, y, radius);
+  ctx.closePath();
+}
+
 function loadImage(src: string): Promise<CanvasImageSource> {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -339,7 +365,7 @@ function drawSprockets(
     for (let y = top * scaleY + dy; y < (top + height) * scaleY - holeH; y += step) {
       ctx.beginPath();
       const r = 4 * scaleX;
-      ctx.roundRect(x + 7 * scaleX, y, holeW, holeH, r);
+      pathRoundedRect(ctx, x + 7 * scaleX, y, holeW, holeH, r);
       ctx.fill();
     }
   });

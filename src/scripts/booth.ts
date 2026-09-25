@@ -55,6 +55,7 @@ const PHOTO_WATCHDOG = 25_000;
 const CONNECT_WATCHDOG = 25_000;
 const SESSION_TTL = 1000 * 60 * 60 * 2;
 const SESSION_KEY = 'pb:session';
+const FRAMES_KEY = 'pb:frames';
 
 const COPY: Record<ErrorKind, FriendlyError> = {
   'camera-unsupported': {
@@ -157,7 +158,9 @@ let stripUrl: string | null = null;
 let errorRetry: (() => void) | null = null;
 let styleOpen = false;
 let styleTrigger: HTMLElement | null = null;
-let stripRenderToken = 0;
+/** Which screen the panel was opened from, so leaving it can close the panel. */
+let styleScreen: Screen | null = null;
+let stripChain: Promise<void> = Promise.resolve();
 let stripRenderTimer: ReturnType<typeof setTimeout> | undefined;
 
 /* --------------------------------------------------------------- utils --- */
@@ -274,6 +277,11 @@ function render(state: AppState) {
     node.classList.toggle('is-active', name === state.screen);
   }
 
+  // The panel is anchored to the screen it was opened from — leave that screen
+  // (home, error card, a new run) and it goes with you, without yanking focus
+  // back to the trigger.
+  if (styleOpen && styleScreen !== null && state.screen !== styleScreen) setStylePanel(false);
+
   el.barRoom.textContent = state.roomCode ?? '····';
 
   // connection status -----------------------------------------------------
@@ -325,10 +333,14 @@ function render(state: AppState) {
 
   // strip style -----------------------------------------------------------
   el.stylePanel.querySelectorAll<HTMLElement>('[data-template]').forEach((chip) => {
-    chip.setAttribute('aria-checked', String(chip.dataset.template === state.template));
+    const checked = chip.dataset.template === state.template;
+    chip.setAttribute('aria-checked', String(checked));
+    chip.tabIndex = checked ? 0 : -1;
   });
   el.stylePanel.querySelectorAll<HTMLElement>('[data-theme]').forEach((chip) => {
-    chip.setAttribute('aria-checked', String(chip.dataset.theme === state.theme));
+    const checked = chip.dataset.theme === state.theme;
+    chip.setAttribute('aria-checked', String(checked));
+    chip.tabIndex = checked ? 0 : -1;
   });
   const chosenTemplate = getTemplate(state.template);
   const chosenTheme = getTheme(state.theme);
@@ -524,6 +536,77 @@ function saveSession(code: string, role: Role) {
   }
 }
 
+interface StoredFrames {
+  code: string;
+  frameIndex: number;
+  /** `null` where a frame was never shot — `undefined` does not survive JSON. */
+  you: (string | null)[];
+  them: (string | null)[];
+  ts: number;
+}
+
+/**
+ * Keep this booth's shots across a reload.
+ *
+ * The frames live only in memory, so a refresh mid-run would otherwise come
+ * back with every photo missing on one side and a strip full of holes. The
+ * storage is per-tab and dies with it — the same lifetime a room has.
+ */
+function saveFrames() {
+  const { roomCode, frameIndex } = store.get();
+  if (!roomCode) return;
+  try {
+    const payload: StoredFrames = {
+      code: roomCode,
+      frameIndex,
+      you: frames.you.slice(0, TOTAL_FRAMES).map((v) => v ?? null),
+      them: frames.them.slice(0, TOTAL_FRAMES).map((v) => v ?? null),
+      ts: Date.now(),
+    };
+    sessionStorage.setItem(FRAMES_KEY, JSON.stringify(payload));
+  } catch {
+    /* quota or private mode — this run just won't survive a reload */
+  }
+}
+
+function clearStoredFrames() {
+  try {
+    sessionStorage.removeItem(FRAMES_KEY);
+  } catch {
+    /* private mode */
+  }
+}
+
+function restoreFrames(code: string) {
+  if (frames.you.length > 0 || frames.them.length > 0) return;
+  let stored: StoredFrames;
+  try {
+    const raw = sessionStorage.getItem(FRAMES_KEY);
+    if (!raw) return;
+    stored = JSON.parse(raw) as StoredFrames;
+  } catch {
+    return;
+  }
+  if (
+    stored?.code !== code ||
+    typeof stored.ts !== 'number' ||
+    Date.now() - stored.ts > SESSION_TTL
+  ) {
+    clearStoredFrames();
+    return;
+  }
+  frames.you = (stored.you ?? []).slice(0, TOTAL_FRAMES).map((v) => v ?? undefined);
+  frames.them = (stored.them ?? []).slice(0, TOTAL_FRAMES).map((v) => v ?? undefined);
+  if (
+    Number.isInteger(stored.frameIndex) &&
+    stored.frameIndex >= 0 &&
+    stored.frameIndex < TOTAL_FRAMES
+  ) {
+    store.set({ frameIndex: stored.frameIndex });
+  }
+  paintRail();
+}
+
 function showResumeIfNeeded() {
   const record = sessionRecord();
   if (!record) {
@@ -565,6 +648,7 @@ async function startCreateRoom() {
     } catch {
       /* ignore */
     }
+    clearStoredFrames();
     saveSession(code, 'host');
     maybeStartPeer();
   } catch (err) {
@@ -631,6 +715,7 @@ async function submitJoin(codeInput: string) {
       error: null,
     });
     saveSession(client.roomCode ?? code, client.role ?? 'guest');
+    restoreFrames(client.roomCode ?? code);
     maybeStartPeer();
     return true;
   } catch (err) {
@@ -866,12 +951,14 @@ function handleRemoteStream(stream: MediaStream | null) {
 
 function sendHello() {
   if (!peer?.isDataOpen()) return;
-  const { cameraReady, session, template, theme } = store.get();
+  const { cameraReady, session, frameIndex, screen, template, theme } = store.get();
   peer.send({
     t: 'hello',
     role: currentRole(),
     cameraReady,
     session,
+    frame: frameIndex,
+    done: screen === 'result',
     template,
     theme,
   });
@@ -900,6 +987,64 @@ function handleClockSync() {
   scheduleCapture(pendingCapture.frame, pendingCapture.targetAt, pendingCapture.initiator);
 }
 
+/**
+ * Converge with a peer that has just (re)opened the channel.
+ *
+ * Both sides run this, so one rule has to settle every mismatch. A booth that
+ * reloads mid-run comes back at frame 0 with fresh ready flags and no photos in
+ * hand, and the `ready`/`capture`/`keep` guards all compare frame numbers — if
+ * the two never agree again, the run silently stalls forever.
+ */
+function settleAfterHello(message: Extract<BoothMessage, { t: 'hello' }>) {
+  const frame = Number.isFinite(message.frame) ? message.frame : 0;
+
+  // They are already holding the finished strip: compose ours from the frames
+  // we have rather than wait for a frame that will never be shot again.
+  if (message.done && store.get().screen !== 'result') {
+    void generateResult();
+    return;
+  }
+
+  // …we are the ones holding it, and they are still in the booth.
+  if (store.get().screen === 'result' && !message.done) {
+    sendHello();
+    return;
+  }
+
+  const current = store.get();
+
+  if (frame > current.frameIndex) {
+    // They are further along — move up to their frame. Anything shot before it
+    // is already on both sides; anything lost with a reload shows up as a hole
+    // in that booth's own strip, which beats waiting on a frame nobody will
+    // replay.
+    reviewTimer = clearTimer(reviewTimer);
+    watchdog = clearTimer(watchdog);
+    pendingIncomingCapture = null;
+    captureFired = false;
+    pendingCapture = null;
+    hideReview();
+    hideCountdown();
+    store.set({ frameIndex: frame, state: 'ready', receivingPhoto: false, partnerReady: false });
+    saveFrames();
+    setReady(store.get().youReady);
+    return;
+  }
+
+  if (frame < current.frameIndex) {
+    // We are further along — rewind the frame we are on so we shoot it
+    // together, instead of one side sitting in review while the other waits.
+    restartFrame(current.frameIndex);
+    store.set({ youReady: false, partnerReady: false });
+    setReady(false);
+    return;
+  }
+
+  // Same frame: re-announce readiness, since a reloaded tab has none yet while
+  // the other may still believe it does.
+  setReady(store.get().youReady);
+}
+
 /* ------------------------------------------------------ booth messages ---- */
 
 function handleBoothMessage(message: BoothMessage) {
@@ -924,6 +1069,7 @@ function handleBoothMessage(message: BoothMessage) {
         saveStyle({ template: next.template, theme: next.theme });
         restyleStrip();
       }
+      settleAfterHello(message);
       break;
     }
 
@@ -1208,6 +1354,7 @@ async function fireCapture(frame: number) {
   setStill('you', dataUrl);
   freeze('you');
   paintRail();
+  saveFrames();
 
   store.set({ state: 'waiting-for-photo', receivingPhoto: false });
 
@@ -1249,6 +1396,7 @@ async function handlePhoto(meta: PhotoTransferMeta, blob: Blob) {
       freeze('them');
     }
     paintRail();
+    saveFrames();
     maybeCompleteFrame(meta.frame);
   } catch {
     showError('photo-transfer', () => restartFrame(meta.frame));
@@ -1262,6 +1410,10 @@ function maybeCompleteFrame(frame: number) {
     if (frames.you[frame] && !frames.them[frame]) store.set({ receivingPhoto: true });
     return;
   }
+
+  // Frames behind the one we are on arrived as catch-up — reviewing them now
+  // would yank the booth back to a frame both sides already shot.
+  if (frame < store.get().frameIndex) return;
 
   // Both the local send and the remote receive can land on the same frame;
   // only the first one starts the review so timers never double up.
@@ -1333,6 +1485,7 @@ function advanceFrame() {
   pendingCapture = null;
   store.set({ frameIndex: next, state: 'ready', youReady: true, partnerReady: true });
   paintRail();
+  saveFrames();
 
   const queued = pendingIncomingCapture;
   if (queued && queued.frame === next) {
@@ -1387,8 +1540,11 @@ function maybeBeginRetake() {
 function restartFrame(frame: number, autoCountdown = false) {
   reviewTimer = clearTimer(reviewTimer);
   watchdog = clearTimer(watchdog);
+  countdownTimer = clearTimer(countdownTimer);
+  cancelAnimationFrame(countdownRaf);
   pendingIncomingCapture = null;
   hideReview();
+  hideCountdown();
   clearStill('you');
   clearStill('them');
   frames.you[frame] = undefined;
@@ -1397,12 +1553,14 @@ function restartFrame(frame: number, autoCountdown = false) {
   captureFired = false;
   pendingCapture = null;
   store.set({ frameIndex: frame, state: 'ready', receivingPhoto: false });
+  saveFrames();
   if (autoCountdown) window.setTimeout(() => primeAndCapture(), 350);
 }
 
 function resetFrames() {
   frames.you.length = 0;
   frames.them.length = 0;
+  clearStoredFrames();
   pendingIncomingCapture = null;
   retake = { frame: -1, you: false, them: false };
   clearStill('you');
@@ -1476,9 +1634,21 @@ async function generateResult() {
   }
 }
 
-/** Rebuild the strip from the frames in hand using the current style. */
-async function renderStrip(reveal: boolean): Promise<void> {
-  const token = ++stripRenderToken;
+/**
+ * Rebuild the strip from the frames in hand using the current style.
+ *
+ * Composes are expensive and can overlap: a style change landing mid-paint used
+ * to invalidate the very reveal the result screen was waiting on, leaving an
+ * empty print and a chime. Queue them instead — every caller then sees its own
+ * paint finish, and a failed paint never wedges the queue.
+ */
+function renderStrip(reveal: boolean): Promise<void> {
+  const run = stripChain.then(() => paintStrip(reveal));
+  stripChain = run.catch(() => undefined);
+  return run;
+}
+
+async function paintStrip(reveal: boolean): Promise<void> {
   const state = store.get();
   const you = frames.you.slice(0, TOTAL_FRAMES).map((v) => v ?? '');
   const them = frames.them.slice(0, TOTAL_FRAMES).map((v) => v ?? '');
@@ -1493,8 +1663,6 @@ async function renderStrip(reveal: boolean): Promise<void> {
   const blob = await new Promise<Blob>((resolve, reject) =>
     canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('encode'))), 'image/png'),
   );
-  // Someone restyled while we were painting — drop this render.
-  if (token !== stripRenderToken) return;
 
   stripCanvas = canvas;
   if (stripUrl) URL.revokeObjectURL(stripUrl);
@@ -1519,6 +1687,7 @@ async function renderStrip(reveal: boolean): Promise<void> {
 function setStylePanel(open: boolean, restoreFocus = false) {
   if (open === styleOpen) return;
   styleOpen = open;
+  styleScreen = open ? store.get().screen : null;
   el.stylePanel.hidden = !open;
   document.querySelectorAll<HTMLElement>('[data-action="open-style"]').forEach((btn) => {
     btn.setAttribute('aria-expanded', String(open));
@@ -1738,6 +1907,40 @@ function wireEvents() {
   });
 
   el.soundBtn.addEventListener('click', toggleSound);
+
+  // Radiogroups move with arrows: focus and selection travel together, so a
+  // keyboard user never lands on a chip they didn't pick.
+  el.stylePanel.addEventListener('keydown', (event) => {
+    const current = (event.target as HTMLElement | null)?.closest<HTMLElement>('[role="radio"]');
+    const group = current?.closest<HTMLElement>('[role="radiogroup"]');
+    if (!current || !group) return;
+    const items = [...group.querySelectorAll<HTMLElement>('[role="radio"]')];
+    const index = items.indexOf(current);
+    if (index < 0) return;
+
+    let next: number;
+    switch (event.key) {
+      case 'ArrowRight':
+      case 'ArrowDown':
+        next = (index + 1) % items.length;
+        break;
+      case 'ArrowLeft':
+      case 'ArrowUp':
+        next = (index - 1 + items.length) % items.length;
+        break;
+      case 'Home':
+        next = 0;
+        break;
+      case 'End':
+        next = items.length - 1;
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
+    items[next].click();
+    items[next].focus();
+  });
 
   document.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape' || !styleOpen) return;
