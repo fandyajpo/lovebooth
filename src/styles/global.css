@@ -1051,8 +1051,8 @@ canvas {
   object-fit: cover;
   background: #000;
   filter: contrast(1.04) saturate(0.96);
-  /* Both viewfinders behave like a mirror, the way a real booth screen does.
-     The saved photo stays natural — see DEFAULT_CAPTURE.mirror. */
+  /* Both viewfinders behave like a mirror, and the photo is captured mirrored
+     to match — what you see is what lands on the strip. */
   transform: scaleX(-1);
 }
 

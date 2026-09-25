@@ -10,8 +10,8 @@ export interface CaptureOptions {
   /** Target size of the exported frame. */
   width: number;
   height: number;
-  /** Horizontally flip the source before saving. Kept off so both panes, the
-   *  captures and the strip all share the same natural point of view. */
+  /** Horizontally flip the source before saving, so the photo matches the
+   *  mirrored viewfinder instead of flipping back the moment the shutter fires. */
   mirror?: boolean;
   /** 0 = take from the top of the source, 1 = from the bottom. */
   anchorY?: number;
@@ -22,13 +22,13 @@ export interface CaptureOptions {
 export const DEFAULT_CAPTURE: CaptureOptions = {
   width: 800,
   height: 522,
-  mirror: false,
+  mirror: true,
   anchorY: 0.4,
   zoom: 1.04,
 };
 
 export function captureFrame(video: HTMLVideoElement, options: CaptureOptions): HTMLCanvasElement {
-  const { width, height, mirror = false, anchorY = 0.4, zoom = 1.04 } = options;
+  const { width, height, mirror = true, anchorY = 0.4, zoom = 1.04 } = options;
   const canvas = document.createElement('canvas');
   canvas.width = width;
   canvas.height = height;
