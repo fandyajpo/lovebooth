@@ -123,6 +123,15 @@ const frames = [1, 2, 3, 4];
 
     <PhotoStrip />
 
+    <div class="result__invite" id="redo-hint" hidden>
+      <p class="result__invite-kicker">Your partner</p>
+      <p class="result__invite-text">started another strip and is waiting in the booth</p>
+      <div class="result__invite-actions">
+        <button class="btn btn--accent" type="button" data-action="join-redo">Join them</button>
+        <button class="btn btn--ghost" type="button" data-action="stay-here">Stay here</button>
+      </div>
+    </div>
+
     <div class="result__actions">
       <DownloadButton />
       <button class="btn" type="button" id="take-another-btn" data-action="take-another">
@@ -131,7 +140,15 @@ const frames = [1, 2, 3, 4];
       <button class="btn btn--ghost" type="button" id="result-style-btn" data-action="open-style">
         Style
       </button>
-      <button class="btn btn--ghost" type="button" data-action="new-room">New room</button>
+      <button
+        class="btn btn--ghost"
+        type="button"
+        id="result-room-btn"
+        data-action="back-to-room-result"
+      >
+        Back to the room
+      </button>
+      <button class="btn btn--ghost" type="button" data-action="exit">Exit</button>
     </div>
 
     <p class="privacy">Photos stay between you and your partner</p>

@@ -10,7 +10,6 @@ import {
   BoothStore,
   TOTAL_FRAMES,
   createInitialState,
-  newSessionId,
   type AppState,
   type ErrorKind,
   type FriendlyError,
@@ -164,6 +163,14 @@ let stripCanvas: HTMLCanvasElement | null = null;
 let stripUrl: string | null = null;
 /** Set when the strip was opened from `/strip` — nothing is attached to it. */
 let detachedStrip: string | null = null;
+/**
+ * The partner gave up their finished strip and started another run on their
+ * own. Only ever recorded while this device sits on `/strip`, and it only ever
+ * buys an invitation — nothing here may move this screen by itself.
+ */
+let partnerRedo = false;
+/** They asked; we said "stay here". A fresh ask brings the invitation back. */
+let partnerRedoDismissed = false;
 let errorRetry: (() => void) | null = null;
 let styleOpen = false;
 let styleTrigger: HTMLElement | null = null;
@@ -244,6 +251,8 @@ const el = {
   stripImg: $('#strip-img') as HTMLImageElement,
   takeAnotherBtn: $('#take-another-btn') as HTMLButtonElement,
   resultStyleBtn: $('#result-style-btn') as HTMLButtonElement,
+  resultRoomBtn: $('#result-room-btn') as HTMLButtonElement,
+  redoHint: $('#redo-hint')!,
 
   errKicker: $('#err-kicker')!,
   errTitle: $('#err-title')!,
@@ -347,6 +356,16 @@ function render(state: AppState) {
   const detached = state.screen === 'result' && detachedStrip !== null;
   el.takeAnotherBtn.hidden = detached;
   el.resultStyleBtn.hidden = detached;
+  el.resultRoomBtn.hidden = detached;
+
+  // The invitation to follow the partner into another run. It only ever shows
+  // where it can be acted on, and never appears on its own initiative.
+  el.redoHint.hidden = !(
+    state.screen === 'result' &&
+    partnerRedo &&
+    !partnerRedoDismissed &&
+    !detached
+  );
 
   // strip style -----------------------------------------------------------
   el.stylePanel.querySelectorAll<HTMLElement>('[data-template]').forEach((chip) => {
@@ -499,6 +518,8 @@ function teardownRun() {
   clearConnectWatchdog();
   frames.you.length = 0;
   frames.them.length = 0;
+  partnerRedo = false;
+  partnerRedoDismissed = false;
   clearStill('you');
   clearStill('them');
   hideReview();
@@ -678,18 +699,13 @@ function readStripCache(): CachedStrip | null {
   }
 }
 
-function clearStripCache() {
-  try {
-    sessionStorage.removeItem(STRIP_KEY);
-  } catch {
-    /* private mode */
-  }
-}
-
 /** `/strip`: replay a strip this tab already developed, or say why we can't. */
 function openSavedStrip() {
   const cached = readStripCache();
-  if (!cached) {
+  // The cache outlives a run now, so it may belong to a booth we have since
+  // left — and that strip is not this room's to show.
+  const live = sessionRecord()?.code ?? null;
+  if (!cached || (live && cached.code && live !== cached.code)) {
     showError('strip-missing');
     return;
   }
@@ -1097,15 +1113,25 @@ function handleClockSync() {
 function settleAfterHello(message: Extract<BoothMessage, { t: 'hello' }>) {
   const frame = Number.isFinite(message.frame) ? message.frame : 0;
 
+  // They walked off their finished strip to shoot another one and we have not
+  // joined them. Our strip stays ours: there is nothing to reconcile, so
+  // neither screen moves.
+  if (partnerRedo && !message.done) return;
+
   // They are already holding the finished strip: compose ours from the frames
   // we have rather than wait for a frame that will never be shot again.
   if (message.done && store.get().screen !== 'result') {
+    if (partnerRedo) return;
+    // We have thrown our half away to start again — there is nothing to
+    // compose, and printing an empty strip would swallow theirs.
+    if (frames.you.every((v) => !v) && frames.them.every((v) => !v)) return;
     void generateResult();
     return;
   }
 
   // …we are the ones holding it, and they are still in the booth.
   if (store.get().screen === 'result' && !message.done) {
+    if (partnerRedo) return;
     sendHello();
     return;
   }
@@ -1228,12 +1254,13 @@ function handleBoothMessage(message: BoothMessage) {
       break;
     }
 
-    case 'reset': {
-      store.set({ session: message.session });
-      resetFrames();
-      if (state.screen === 'result' || state.screen === 'booth') {
-        store.set({ screen: 'booth', state: 'ready', error: null });
-      }
+    case 'redo': {
+      // A hint, and only one we can actually show: anywhere else we are
+      // already in the run, or somewhere the invitation means nothing.
+      if (state.screen !== 'result') break;
+      partnerRedo = true;
+      partnerRedoDismissed = false;
+      refresh();
       break;
     }
 
@@ -1657,10 +1684,12 @@ function restartFrame(frame: number, autoCountdown = false) {
 }
 
 function resetFrames() {
+  // Leaving a finished strip behind is worth telling the partner — as a hint
+  // they can ignore, never as something that moves their screen.
+  const hadStrip = stripCanvas !== null || store.get().screen === 'result';
   frames.you.length = 0;
   frames.them.length = 0;
   clearStoredFrames();
-  clearStripCache();
   pendingIncomingCapture = null;
   retake = { frame: -1, you: false, them: false };
   clearStill('you');
@@ -1670,8 +1699,11 @@ function resetFrames() {
   reviewTimer = clearTimer(reviewTimer);
   captureFired = false;
   pendingCapture = null;
+  partnerRedo = false;
+  partnerRedoDismissed = false;
   store.set({ frameIndex: 0, youReady: false, partnerReady: false, receivingPhoto: false });
   paintRail();
+  if (hadStrip) peer?.send({ t: 'redo' });
 }
 
 /* ------------------------------------------------------------ previews ---- */
@@ -1859,10 +1891,16 @@ async function downloadStrip() {
   }
 }
 
+/**
+ * Shoot another strip — a decision about *this* device only.
+ *
+ * It puts this booth back in the run and leaves the partner on their strip,
+ * free to join whenever they choose: they get an invitation, not an order.
+ * The session id deliberately survives, because capture needs both sides
+ * ready — nobody can shoot ahead alone, so the two of them always meet on
+ * frame one with the same session and nothing has to be renegotiated.
+ */
 function takeAnother() {
-  const nextSession = newSessionId();
-  peer?.send({ t: 'reset', session: nextSession });
-  store.set({ session: nextSession });
   detachedStrip = null;
   resetFrames();
   store.set({ screen: 'booth', state: 'ready', error: null });
@@ -1874,6 +1912,31 @@ function takeAnother() {
       /* ignore */
     }
   }
+  // Whoever is already in the booth re-announces their readiness, and we land
+  // on the frame they are sitting on.
+  sendHello();
+}
+
+/** Back to the room card we came from: still connected, still in the session. */
+function backToResultRoom() {
+  backToRoom();
+  const code = store.get().roomCode;
+  if (code) {
+    try {
+      history.replaceState(null, '', `/room/${code}`);
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+/**
+ * Leave the booth for good. Says goodbye first so the partner's screen tells
+ * the truth; their strip stays on *their* device either way.
+ */
+function exitBooth() {
+  peer?.send({ t: 'bye' });
+  goHome();
 }
 
 /* ------------------------------------------------------------ lifecycle --- */
@@ -1966,8 +2029,18 @@ function handleAction(action: string, target: HTMLElement) {
     case 'take-another':
       takeAnother();
       break;
-    case 'new-room':
-      goHome();
+    case 'join-redo':
+      takeAnother();
+      break;
+    case 'back-to-room-result':
+      backToResultRoom();
+      break;
+    case 'exit':
+      exitBooth();
+      break;
+    case 'stay-here':
+      partnerRedoDismissed = true;
+      refresh();
       break;
     case 'open-style':
       styleTrigger = target;

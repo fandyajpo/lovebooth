@@ -72,8 +72,13 @@ export type BoothMessage =
   | { t: 'retake'; frame: number; session: string }
   /** Keep the frame as-is and move on now instead of waiting out the hold. */
   | { t: 'keep'; frame: number; session: string }
-  /** Start a brand new four-frame run. */
-  | { t: 'reset'; session: string }
+  /**
+   * One side gave up a finished strip and started another run of their own.
+   * It is a hint, never a command: the receiver stays wherever it is and may
+   * join later through its own button. Which is why it carries nothing to
+   * apply — no session, no frame, nothing that could move a screen.
+   */
+  | { t: 'redo' }
   /** Polite goodbye before a tab closes. */
   | { t: 'bye' };
 

@@ -97,8 +97,16 @@ working exactly as before until you add them.
    their own local offset from a ping/pong clock sync and flash on the same tick.
 6. **Review** → the composed frame, with *Keep it* and *Retake*. A retake only
    happens when **both** people ask for one; either person can keep it.
-7. **Result** → the 1200×1800 strip, PNG download, or *Take another* which issues a
-   fresh session id so a stale frame from the previous run can never land.
+7. **Result** → the 1200×1800 strip at `/strip`, a PNG download, and four choices
+   that belong to the device that presses them: *Take another*, *Style*,
+   *Back to the room* and *Exit*. None of them moves the partner. Start another
+   strip and they are *invited* — a card on their own screen offering *Join them*
+   or *Stay here* — never dragged along.
+
+Capture always needs both sides ready, so the person who taps *Take another*
+can only end up waiting in the booth: the session id and the frame number are
+left untouched, which means whoever joins later lands on frame 01 with the same
+session and nothing has to be renegotiated.
 
 Frames are carried between peers over an ordered, reliable WebRTC data channel in
 16 KB chunks, not through the relay.
@@ -208,6 +216,10 @@ is shareable, a developed strip reappears at `/strip`), then a two-device sessio
 across two isolated browser contexts — the same code path two separate phones take
 — asserting that ICE servers were fetched, both partner streams arrived, a frame
 transferred, and a drop-out and rejoin mid-run agree on which frame is current.
+From the strip onward it checks that *nothing either device presses moves the
+other*: one walks away with *Take another*, the partner stays on their strip and
+gets the invitation, taking it puts both back on an empty frame 01, and *Back to
+the room* / *Exit* each move only the one who pressed them.
 It also switches the strip style on one device and asserts the other follows,
 then composes all twelve template × theme combinations and checks each renders
 1200 × 1800 with its own paper colour.
@@ -216,9 +228,11 @@ then composes all twelve template × theme combinations and checks each renders
 npm run verify:protocol                          # relay only, ~5s, no browser
 npm run verify                                   # + full session on localhost
 RELAY=wss://lovebooth-relay.fandyglitch3.workers.dev \
-ORIGIN=http://192.168.0.105:4321 npm run verify  # + session through the real relay
+ORIGIN=http://192.168.0.104:4321 npm run verify  # + session through the real relay
 ```
 
 Serve `ORIGIN` from a non-localhost host to exercise `/ice` and the relay; on
 localhost the app uses its BroadcastChannel transport instead, which the script
-detects and skips those assertions for.
+detects and skips those assertions for. Use your own LAN address — DHCP hands a
+new one out often enough that the example above will go stale; check it with
+`ipconfig getifaddr en0`.

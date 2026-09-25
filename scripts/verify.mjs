@@ -695,6 +695,71 @@ async function session() {
       'a live strip still offers Take another',
     );
 
+    /* --- from the strip onward, nobody may press anybody else's buttons --- */
+
+    const activeId = (p) => p.$eval('.screen.is-active', (n) => n.id).catch(() => '<none>');
+    const filled = (p) =>
+      p.$$eval('.rail__slot.is-filled', (slots) => slots.length).catch(() => -1);
+    const on = (p, want) =>
+      p.waitForFunction(
+        (id) => document.querySelector('.screen.is-active')?.id === id,
+        { polling: 250, timeout: 20000 },
+        want,
+      );
+
+    // The host walks away from their own strip. The guest must not budge.
+    await click(host, '#take-another-btn');
+    await on(host, 'screen-booth');
+    check(true, 'Take another moves the one who pressed it');
+    await new Promise((r) => setTimeout(r, 800));
+    check((await activeId(guest2)) === 'screen-result', 'the partner is left on their strip');
+    check(new URL(guest2.url()).pathname === '/strip', 'the partner stays at /strip');
+    check(
+      await guest2.$eval('#strip-img', (n) => (n.getAttribute('src') ?? '').startsWith('blob:')),
+      'the partner keeps the strip they just made',
+    );
+    check(
+      await guest2.$eval('#redo-hint', (n) => !n.hidden),
+      'the partner is invited to follow',
+    );
+    check(await host.$eval('#redo-hint', (n) => n.hidden), 'the invitation never shows in the booth');
+
+    // The invitation is the guest's to take — and it lands them on frame 01.
+    await click(guest2, '[data-action="join-redo"]');
+    await on(guest2, 'screen-booth');
+    await Promise.all([reaches(host, '01'), reaches(guest2, '01')]);
+    check((await filled(host)) === 0 && (await filled(guest2)) === 0, 'both rails start empty');
+
+    // Shoot a second strip, so there is a finished one to walk away from again.
+    for (const next of ['02', '03', '04']) await shootAgain(next);
+    await click(host, '#ready-btn').catch(() => undefined);
+    await new Promise((r) => setTimeout(r, 400));
+    await click(guest2, '#ready-btn').catch(() => undefined);
+    await host.waitForSelector('#capture-btn:not([disabled])', { timeout: 20000 });
+    await click(host, '#capture-btn');
+    await Promise.all([developed(host), developed(guest2)]);
+    check(true, 'the second strip is on both screens');
+
+    // Back to the room only moves the guest; the host keeps their strip.
+    await click(guest2, '#result-room-btn');
+    await on(guest2, 'screen-join');
+    check(new URL(guest2.url()).pathname === `/room/${code}`, `the guest is back at ${code}`);
+    await new Promise((r) => setTimeout(r, 600));
+    check((await activeId(host)) === 'screen-result', 'the host is still looking at their strip');
+    check(
+      await host.$eval('#strip-img', (n) => (n.getAttribute('src') ?? '').startsWith('blob:')),
+      'the host keeps the strip they just made',
+    );
+
+    // And Exit is local too: the host goes home, the guest stays put.
+    await click(host, 'button[data-action="exit"]');
+    await Promise.all([
+      host.waitForFunction(() => location.pathname === '/', { polling: 250, timeout: 20000 }),
+      on(guest2, 'screen-join'),
+    ]);
+    check(true, 'Exit takes the one who pressed it home');
+    check(new URL(guest2.url()).pathname === `/room/${code}`, 'the guest is not dragged along');
+
     check(errors.length === 0, `no page errors${errors.length ? ` → ${errors.join('; ')}` : ''}`);
   } finally {
     await browser.close();
