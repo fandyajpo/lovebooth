@@ -1051,6 +1051,9 @@ canvas {
   object-fit: cover;
   background: #000;
   filter: contrast(1.04) saturate(0.96);
+  /* Both viewfinders behave like a mirror, the way a real booth screen does.
+     The saved photo stays natural — see DEFAULT_CAPTURE.mirror. */
+  transform: scaleX(-1);
 }
 
 .cam__label {
