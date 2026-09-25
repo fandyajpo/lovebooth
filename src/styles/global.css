@@ -306,6 +306,13 @@ canvas {
   color: var(--accent);
 }
 
+/* The leave button arms for one confirming tap once a frame exists. */
+.bar__leave[data-armed='true'] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--paper);
+}
+
 #sound-btn[aria-pressed='true'] span {
   mix-blend-mode: normal;
   color: inherit;
@@ -675,6 +682,27 @@ canvas {
   color: var(--ink-3);
 }
 
+.card__leave {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  padding: 0;
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.card__leave:hover,
+.card__leave:focus-visible {
+  color: var(--ink);
+}
+
 .ticket {
   position: relative;
   background: var(--mat);
@@ -764,9 +792,10 @@ canvas {
 @media (min-width: 560px) {
   .card__actions--split {
     flex-direction: row;
+    flex-wrap: wrap;
   }
   .card__actions--split > * {
-    flex: 1;
+    flex: 1 1 140px;
   }
 }
 
@@ -777,6 +806,11 @@ canvas {
   text-transform: uppercase;
   color: var(--ok);
   min-height: 1.1em;
+}
+
+/* Empty status lines still cost a line — hide them so short screens fit. */
+.copied-flag:empty {
+  display: none;
 }
 
 /* ================================================================ JOIN === */
@@ -901,6 +935,16 @@ canvas {
 
 .perm .btn {
   min-width: min(280px, 100%);
+}
+
+/* Side by side wherever they fit — a stacked pair overflows short, wide
+   windows (think a laptop at 900x600). */
+.perm__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
 }
 
 .perm__note {
@@ -1898,6 +1942,14 @@ canvas {
 /* Tiny screens: shave the last few pixels so the booth still lands exactly
    inside the viewport instead of scrolling by a hair. */
 @media (max-height: 620px) {
+  .card {
+    padding: clamp(16px, 4vw, 44px);
+    gap: clamp(12px, 2.4vw, 26px);
+  }
+  .ticket {
+    padding-block: 16px;
+    margin: 4px 0;
+  }
   .bar {
     padding-top: 6px;
     padding-bottom: 6px;

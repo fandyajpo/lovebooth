@@ -162,6 +162,7 @@ const el = {
   status: $('#connection-status')!,
   statusText: $('#connection-text')!,
   barRoom: $('#bar-room')!,
+  leaveBtn: $('#leave-btn') as HTMLButtonElement,
 
   videoYou: $('#video-you') as HTMLVideoElement,
   videoPartner: $('#video-partner') as HTMLVideoElement,
@@ -373,6 +374,44 @@ function showError(kind: ErrorKind, retry?: () => void) {
   });
 }
 
+/** Which room screen the booth was entered from, so Back can return there. */
+let roomScreen: 'create' | 'join' = 'join';
+/** Deadline for the confirming second tap on the leave button. */
+let leaveArmTimer = 0;
+
+function backToRoom() {
+  disarmLeave();
+  store.set({
+    screen: roomScreen,
+    state: roomScreen === 'create' ? 'waiting-for-partner' : 'joining-room',
+    error: null,
+  });
+}
+
+function disarmLeave() {
+  window.clearTimeout(leaveArmTimer);
+  leaveArmTimer = 0;
+  delete el.leaveBtn.dataset.armed;
+  el.leaveBtn.setAttribute('aria-label', 'Leave the session');
+}
+
+/**
+ * Leaving ends the session for both people, so once a frame exists the first
+ * tap only arms the button — a second tap within three seconds confirms it.
+ */
+function leaveSession() {
+  const armed = el.leaveBtn.dataset.armed === 'true';
+  if (frames.you.length > 0 && !armed) {
+    el.leaveBtn.dataset.armed = 'true';
+    el.leaveBtn.setAttribute('aria-label', 'Tap again to leave the session');
+    leaveArmTimer = window.setTimeout(disarmLeave, 3000);
+    return;
+  }
+  disarmLeave();
+  peer?.send({ t: 'bye' });
+  goHome();
+}
+
 function goHome() {
   teardownRun();
   store.set({
@@ -532,6 +571,15 @@ async function submitJoin(codeInput: string) {
   }
 
   try {
+    // Back → Join again on a room we're already in must not open a second
+    // socket: the room would look full to ourselves.
+    if (signaling?.roomCode === code) {
+      store.set({ screen: 'permission', state: 'camera-permission', error: null });
+      return true;
+    }
+    signaling?.close();
+    signaling = null;
+
     const client = createSignalingClient();
     wireSignaling(client);
     signaling = client;
@@ -1417,6 +1465,12 @@ function handleAction(action: string) {
     case 'back-home':
       goHome();
       break;
+    case 'leave-session':
+      leaveSession();
+      break;
+    case 'back-to-room':
+      backToRoom();
+      break;
     case 'resume-room':
       void resumeRoom();
       break;
@@ -1425,6 +1479,7 @@ function handleAction(action: string) {
       break;
     case 'enter-booth':
       primeAudio();
+      roomScreen = store.get().screen === 'join' ? 'join' : 'create';
       store.set({ screen: 'permission', state: 'camera-permission' });
       break;
     case 'enable-camera':

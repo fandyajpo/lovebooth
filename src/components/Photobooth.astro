@@ -22,6 +22,16 @@ const frames = [1, 2, 3, 4];
 
   <section class="screen booth" id="screen-booth" aria-label="Photobooth">
     <header class="bar">
+      <button
+        class="iconbtn bar__leave"
+        type="button"
+        id="leave-btn"
+        data-action="leave-session"
+        aria-label="Leave the session"
+        title="Leave the session"
+      >
+        <span aria-hidden="true">←</span>
+      </button>
       <span class="bar__brand">Photobooth</span>
       <ConnectionStatus />
       <div class="bar__tools">
