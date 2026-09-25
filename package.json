@@ -10,7 +10,8 @@
     "build": "astro build",
     "preview": "astro preview",
     "check": "astro check",
-    "relay": "node scripts/signaling-relay.mjs"
+    "relay": "wrangler dev --port 8787",
+    "relay:deploy": "wrangler deploy"
   },
   "engines": {
     "node": ">=22.12.0"
@@ -21,6 +22,6 @@
   "devDependencies": {
     "@astrojs/check": "^0.9.10",
     "typescript": "^5.9.3",
-    "ws": "^8.21.3"
+    "wrangler": "^4.140.0"
   }
 }

@@ -13,43 +13,43 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:4321 in two tabs (or two browsers) and run the flow end to end —
-nothing else to configure.
+Open http://localhost:4321 in two tabs and run the flow end to end — nothing to
+configure. On the deployed site (or any non-`localhost` host) a second device just
+opens the same URL and types the four-character code.
 
 | command | what it does |
 | --- | --- |
-| `npm run dev` | dev server, `host: true` |
+| `npm run dev` | dev server |
 | `npm run dev:host` | dev server reachable from other devices on your LAN |
-| `npm run relay` | optional local signaling relay on `ws://localhost:8787` |
 | `npm run build` / `npm run preview` | static production build / serve it |
 | `npm run check` | TypeScript + Astro diagnostics |
+| `npm run relay` | run the signaling relay locally on `ws://localhost:8787` |
+| `npm run relay:deploy` | push the signaling relay to Cloudflare |
 
-## How the two tabs are connected
+## How the two devices are connected
 
-There is no server in the app. Signaling sits behind one interface,
+There is no backend in the app itself. Signaling sits behind one interface,
 `SignalingClient` in `src/lib/signaling.ts`, and two transports implement it:
 
-- **BroadcastChannel (default).** Tabs on the same machine discover each other
-  through `localStorage` + `BroadcastChannel`. Zero configuration, no process to run.
-  The room receipt shows `Connected · same device`.
-- **WebSocket relay (optional).** Point the app at any relay that speaks the
-  small message protocol in `scripts/signaling-relay.mjs` and the same two tabs
-  become two different machines. The receipt shows
+- **WebSocket relay (default).** Used whenever the page is not served from a local
+  hostname. The deployed relay is `relay/` — a Cloudflare Worker with a Durable
+  Object per room — living at
+  `wss://lovebooth-relay.fandyglitch3.workers.dev/`. Two phones on two networks
+  find each other through it with zero configuration. The room receipt shows
   `Connected · over the internet`.
+- **BroadcastChannel (localhost fallback).** Tabs on the same machine discover each
+  other through `localStorage` + `BroadcastChannel`, so `npm run dev` needs no server
+  at all. The receipt shows `Connected · same device`, and the join form warns that
+  a local booth only reaches this browser.
 
-```bash
-npm run relay                                              # terminal 1
-PUBLIC_SIGNALING_URL=ws://localhost:8787 npm run dev       # terminal 2
-```
+`PUBLIC_SIGNALING_URL` overrides the relay for either mode; it is read once at
+build/dev time, so set it before starting the server. See `.env.example`.
 
-`PUBLIC_SIGNALING_URL` is read once at build/dev time, so set it before starting
-the server. See `.env.example`.
+Both transports only carry room membership and SDP/ICE blobs. Photos travel
+peer-to-peer over WebRTC and never touch a relay.
 
-The relay only ever carries room membership and SDP/ICE blobs. It never sees
-a pixel.
-
-> Cameras need a secure context. `localhost` is fine over plain HTTP; for
-> `--host` on a LAN address put it behind HTTPS or a tunnel.
+> Cameras need a secure context. `localhost` is fine over plain HTTP; for `--host`
+> on a LAN address put it behind HTTPS or a tunnel.
 
 ## The flow
 
@@ -96,7 +96,9 @@ src/
     sound.ts               ticks, shutter, chime
     room.ts                room-code generation
   styles/global.css        the whole visual system
-scripts/signaling-relay.mjs  optional dev relay (not imported by the app)
+relay/
+  src/index.js             signaling relay: Worker + BoothHub Durable Object
+  wrangler.jsonc           deploy config
 ```
 
 ## Visual system
@@ -114,5 +116,6 @@ and status/countdown/review changes are announced through `aria-live`.
 `npm run check` reports 0 errors. The end-to-end flow (room create → join →
 bad-code rejection → camera → WebRTC → ready → synchronized countdown → photo
 transfer → retake consent → 4 frames → 1200×1800 strip → reset) has been exercised
-headlessly against both signaling transports with zero console errors.
-# lovebooth
+headlessly against both signaling transports with zero console errors, including two
+isolated browser profiles joining one room through the deployed relay — the same
+code path two separate phones take.

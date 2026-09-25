@@ -4,10 +4,13 @@
  * The UI only ever talks to {@link SignalingClient}. Two transports ship with
  * the booth:
  *
- *  - `WebSocketSignalingClient` — any tiny relay that speaks the JSON protocol
- *    below (see `scripts/signaling-relay.mjs`). Set `PUBLIC_SIGNALING_URL`.
- *  - `BroadcastChannelSignalingClient` — no server at all; works between tabs
- *    on the same device, which is enough to develop and demo the full flow.
+ *  - `WebSocketSignalingClient` — the default. Talks to the deployed relay
+ *    below, so two phones on two networks can find each other. Point
+ *    `PUBLIC_SIGNALING_URL` at any other relay (or `npm run relay`) and
+ *    nothing else changes.
+ *  - `BroadcastChannelSignalingClient` — no server at all; used on localhost,
+ *    where two tabs on the same machine can develop and demo the full flow
+ *    without a relay running.
  *
  * Signaling only ever moves WebRTC negotiation payloads and presence. Photos
  * never go through it.
@@ -15,6 +18,15 @@
 
 import { generateRoomCode, isValidRoomCode, normalizeRoomCode, ROOM_CODE_LENGTH } from './room';
 import type { Role } from './protocol';
+
+/**
+ * The deployed Cloudflare Worker (`relay/`). Public on purpose: it only
+ * forwards SDP/ICE payloads and room presence, never photos or anything
+ * identifying. Override with `PUBLIC_SIGNALING_URL` to use your own.
+ */
+export const DEPLOYED_RELAY_URL = 'wss://lovebooth-relay.fandyglitch3.workers.dev/';
+
+const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '0.0.0.0', '[::1]', '::1']);
 
 export type SignalingErrorKind =
   | 'not-found'
@@ -563,7 +575,13 @@ export class BroadcastChannelSignalingClient implements SignalingClient {
 
 export function signalingTransportUrl(): string | null {
   const url = import.meta.env.PUBLIC_SIGNALING_URL;
-  return typeof url === 'string' && url.trim().length > 0 ? url.trim() : null;
+  if (typeof url === 'string' && url.trim().length > 0) return url.trim();
+
+  // On localhost there is nothing to relay between but two tabs, and the
+  // BroadcastChannel does that with no server running at all.
+  if (typeof location !== 'undefined' && LOCAL_HOSTS.has(location.hostname)) return null;
+
+  return DEPLOYED_RELAY_URL;
 }
 
 export function createSignalingClient(): SignalingClient {
