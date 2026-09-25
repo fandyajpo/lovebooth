@@ -44,6 +44,15 @@
 
 html {
   -webkit-text-size-adjust: 100%;
+  /* The whole app is a single fixed-height stage — no scrollbar. */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+html::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
 }
 
 body {
@@ -309,10 +318,23 @@ canvas {
 #app {
   position: relative;
   z-index: 1;
-  min-height: 100dvh;
+  height: 100dvh;
   display: grid;
   place-items: center;
+  /* Falls back to plain `center` where `safe` isn't supported — without it a
+     taller-than-viewport screen would overflow upwards and become unreachable. */
+  align-items: safe center;
   padding: clamp(12px, 3vw, 32px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+#app::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
 }
 
 .shell {
@@ -414,11 +436,11 @@ canvas {
   border: 3px solid var(--ink);
   background: var(--paper);
   box-shadow: var(--shadow-hard-lg);
-  padding: clamp(18px, 4vw, 34px);
+  padding: clamp(16px, min(4vw, 3.4vh), 34px);
   min-height: min(78dvh, 720px);
   display: flex;
   flex-direction: column;
-  gap: clamp(18px, 4vw, 34px);
+  gap: clamp(14px, min(4vw, 3vh), 34px);
   overflow: hidden;
 }
 
@@ -482,15 +504,17 @@ canvas {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: clamp(14px, 3vw, 26px);
-  padding: clamp(6px, 2vw, 20px) 0;
+  gap: clamp(12px, min(3vw, 2.6vh), 26px);
+  padding: clamp(4px, min(2vw, 1.8vh), 20px) 0;
 }
 
 .landing__title {
   font-family: var(--font-display);
   font-weight: 400;
   text-transform: uppercase;
-  font-size: clamp(3.6rem, 17vw, 11.5rem);
+  /* Driven by viewport height as well as width, so a wide-but-short laptop
+     doesn't grow a scrollbar. */
+  font-size: clamp(3.6rem, min(17vw, 17vh), 11.5rem);
   line-height: 0.8;
   letter-spacing: -0.02em;
 }
@@ -593,8 +617,13 @@ canvas {
 
 .contact-sheet {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(76px, 1fr));
+  /* Always one row of four — auto-fit wrapped to 3+1 on narrow screens, which
+     turned a film strip into a grid and ate the height budget. */
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
+  /* Keep the four frames thumbnail-sized instead of stretching them across
+     the whole card — a contact sheet, not a hero image. */
+  max-width: min(520px, 100%);
 }
 
 .contact-sheet span {
@@ -1648,17 +1677,17 @@ canvas {
   border: 3px solid var(--ink);
   background: var(--paper);
   box-shadow: var(--shadow-hard-lg);
-  padding: clamp(20px, 4vw, 40px);
+  padding: clamp(16px, min(4vw, 3vh), 40px);
   text-align: center;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: clamp(16px, 3vw, 26px);
+  gap: clamp(10px, min(3vw, 1.8vh), 26px);
 }
 
 .result__title {
   font-family: var(--font-display);
-  font-size: clamp(2rem, 8vw, 4rem);
+  font-size: clamp(2rem, min(8vw, 6vh), 4rem);
   line-height: 0.9;
   text-transform: uppercase;
 }
@@ -1670,7 +1699,11 @@ canvas {
   border: 2px solid var(--ink);
   box-shadow: 6px 6px 0 rgba(20, 18, 14, 0.25);
   transform: rotate(-1.4deg);
-  max-width: min(430px, 86vw);
+  /* The strip is 2:3, so its height follows its width — cap the width against
+     the viewport height too, otherwise the bottom of the photo (and the
+     buttons under it) falls below the fold on a short screen. */
+  width: min(420px, 86vw, calc((100dvh - 400px) * 0.6667));
+  max-width: 100%;
 }
 
 .print::after {
@@ -1731,7 +1764,7 @@ canvas {
 }
 
 .result__actions .btn {
-  flex: 1 1 190px;
+  flex: 1 1 140px;
 }
 
 /* =============================================================== ERROR === */
@@ -1806,6 +1839,75 @@ canvas {
 @media (max-height: 720px) and (min-width: 720px) {
   .cam {
     aspect-ratio: 16 / 9;
+  }
+}
+
+/* A wide-but-short window has plenty of room for the big type but not for the
+   full-height cards — tighten the rhythm so every screen still fits with no
+   scrollbar. Narrow phones already tighten themselves at 520px, so the
+   viewport padding is only reclaimed on wider ones. */
+@media (max-height: 800px) and (min-width: 521px) {
+  #app {
+    padding: clamp(8px, 2vh, 18px);
+  }
+}
+
+/* Height-sensitive type and spacing: viewport width alone was enough to make
+   these overflow on a short laptop. */
+@media (max-height: 800px) {
+  .landing {
+    padding: clamp(14px, min(3vw, 2.6vh), 26px);
+    gap: clamp(12px, min(3vw, 2.2vh), 24px);
+  }
+  .landing__title {
+    font-size: clamp(3.2rem, min(17vw, 15vh), 11.5rem);
+  }
+  .landing__body {
+    gap: clamp(10px, min(3vw, 2.2vh), 20px);
+    padding: clamp(2px, min(2vw, 1.4vh), 12px) 0;
+  }
+  .contact-sheet {
+    max-width: min(420px, 100%);
+  }
+  .card {
+    padding: clamp(16px, min(5vw, 3.4vh), 34px);
+    gap: clamp(12px, min(3vw, 2.4vh), 24px);
+  }
+  .perm {
+    padding: clamp(20px, min(7vw, 6vh), 64px) clamp(20px, 5vw, 48px);
+    gap: clamp(12px, min(3vw, 2.2vh), 22px);
+  }
+  .perm__lens {
+    width: clamp(84px, min(24vw, 20vh), 148px);
+  }
+  .bar {
+    padding: clamp(8px, min(2vw, 1.8vh), 16px) clamp(12px, 3vw, 22px);
+  }
+  .stage {
+    padding: clamp(8px, min(3vw, 2.2vh), 24px);
+  }
+  .deck {
+    padding: clamp(10px, min(3vw, 2.2vh), 24px);
+    gap: clamp(8px, min(2.2vw, 1.8vh), 16px);
+  }
+  .rail {
+    padding-bottom: clamp(4px, min(1.5vw, 1.4vh), 10px);
+  }
+}
+
+/* Tiny screens: shave the last few pixels so the booth still lands exactly
+   inside the viewport instead of scrolling by a hair. */
+@media (max-height: 620px) {
+  .bar {
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+  .deck {
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+  .rail {
+    padding-bottom: 4px;
   }
 }
 
