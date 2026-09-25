@@ -68,10 +68,14 @@ export class BoothPeer {
   private activeTransfer: { meta: PhotoTransferMeta; parts: Blob[]; received: number } | null =
     null;
 
-  constructor(role: Role, events: BoothPeerEvents = {}) {
+  constructor(
+    role: Role,
+    events: BoothPeerEvents = {},
+    options: { iceServers?: RTCIceServer[] } = {},
+  ) {
     this.role = role;
     this.events = events;
-    this.pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    this.pc = new RTCPeerConnection({ iceServers: options.iceServers ?? ICE_SERVERS });
     this.wire();
     if (role === 'host') this.openDataChannel();
   }

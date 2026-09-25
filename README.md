@@ -51,6 +51,38 @@ peer-to-peer over WebRTC and never touch a relay.
 > Cameras need a secure context. `localhost` is fine over plain HTTP; for `--host`
 > on a LAN address put it behind HTTPS or a tunnel.
 
+## Getting through both networks (TURN)
+
+Signaling only *introduces* the two devices. Whether they can then talk depends on
+their NATs, and two phones on two different home networks frequently can't open a
+direct path. When that happens the booth pairs, the room reaches the booth, and the
+partner's pane just stays black under `Connecting` — because there is no route.
+
+The fix is TURN: a relay for the media itself. It is only used as a last resort, so
+it costs nothing on a LAN or any network that can connect directly.
+
+- `GET /ice` on the relay Worker mints short-lived credentials from Cloudflare
+  Realtime TURN and returns them as an `iceServers` array. The TURN key and its API
+  token are Worker secrets — neither ever reaches the browser.
+- `src/lib/ice.ts` fetches that before the peer connection is created, once per
+  connection attempt, and falls back to STUN if the endpoint is unavailable.
+- Cloudflare's free tier covers the first **1,000 GB** of egress per month.
+
+One-time setup:
+
+1. In the Cloudflare dashboard, create a **TURN key** (Realtime → TURN keys) and an
+   **API token** that can generate credentials for it.
+2. Give the Worker both values:
+
+```bash
+npx wrangler secret put TURN_KEY_ID     --config relay/wrangler.jsonc
+npx wrangler secret put TURN_API_TOKEN  --config relay/wrangler.jsonc
+npm run relay:deploy
+```
+
+Without those secrets `/ice` still answers — with STUN only — so the booth keeps
+working exactly as before until you add them.
+
 ## The flow
 
 1. **Landing** → *Create a room* or *Join with a code*.
@@ -87,6 +119,7 @@ src/
   scripts/booth.ts         orchestrator: state ⇄ DOM, room, frames, review
   lib/
     signaling.ts           SignalingClient interface + 2 transports
+    ice.ts                 fetches ICE/TURN servers from the relay
     webrtc.ts              BoothPeer: negotiation, data channel, clock sync
     state.ts               state machine + store
     protocol.ts            typed messages between the two peers
@@ -97,7 +130,7 @@ src/
     room.ts                room-code generation
   styles/global.css        the whole visual system
 relay/
-  src/index.js             signaling relay: Worker + BoothHub Durable Object
+  src/index.js             signaling relay + `GET /ice` (TURN credentials)
   wrangler.jsonc           deploy config
 ```
 

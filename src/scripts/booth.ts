@@ -23,6 +23,7 @@ import {
   type SignalingClient,
 } from '../lib/signaling';
 import { BoothPeer, type PeerState, type PhotoTransferMeta } from '../lib/webrtc';
+import { loadIceServers } from '../lib/ice';
 import type { BoothMessage, Role } from '../lib/protocol';
 import {
   CameraError,
@@ -42,6 +43,8 @@ const COUNTDOWN_LEAD = 3500;
 const REVIEW_HOLD = 2600;
 const RETAKE_DELAY = 900;
 const PHOTO_WATCHDOG = 25_000;
+/** How long two peers may sit in `Checking` before we admit the link failed. */
+const CONNECT_WATCHDOG = 25_000;
 const SESSION_TTL = 1000 * 60 * 60 * 2;
 const SESSION_KEY = 'pb:session';
 
@@ -119,6 +122,8 @@ let stopWatchLocal: (() => void) | null = null;
 
 let peerPresent = false;
 let dataOpen = false;
+/** Fetched once per connection attempt — TURN credentials never touch storage. */
+let iceServers: RTCIceServer[] | null = null;
 
 const frames: { you: (string | undefined)[]; them: (string | undefined)[] } = {
   you: [],
@@ -128,6 +133,7 @@ const frames: { you: (string | undefined)[]; them: (string | undefined)[] } = {
 let countdownRaf = 0;
 let countdownTimer: ReturnType<typeof setTimeout> | undefined;
 let reviewTimer: ReturnType<typeof setTimeout> | undefined;
+let connectWatchdog: ReturnType<typeof setTimeout> | undefined;
 let watchdog: ReturnType<typeof setTimeout> | undefined;
 let retakeTimer: ReturnType<typeof setTimeout> | undefined;
 let copyFlagTimer: ReturnType<typeof setTimeout> | undefined;
@@ -426,6 +432,7 @@ function goHome() {
 
 function teardownRun() {
   stopCaptureTimers();
+  clearConnectWatchdog();
   frames.you.length = 0;
   frames.them.length = 0;
   clearStill('you');
@@ -509,6 +516,7 @@ async function startCreateRoom() {
   });
 
   try {
+    iceServers = await loadIceServers();
     const client = createSignalingClient();
     wireSignaling(client);
     signaling = client;
@@ -580,6 +588,7 @@ async function submitJoin(codeInput: string) {
     signaling?.close();
     signaling = null;
 
+    iceServers = await loadIceServers();
     const client = createSignalingClient();
     wireSignaling(client);
     signaling = client;
@@ -683,20 +692,43 @@ function wireSignaling(client: SignalingClient) {
 function maybeStartPeer() {
   if (peer || !signaling?.roomCode || !signaling.role || !peerPresent) return;
 
-  peer = new BoothPeer(signaling.role, {
-    onState: handlePeerState,
-    onRemoteStream: handleRemoteStream,
-    onDataOpen: handleDataOpen,
-    onDataClose: handleDataClose,
-    onMessage: handleBoothMessage,
-    onPhoto: handlePhoto,
-    onClockSync: handleClockSync,
-  });
+  peer = new BoothPeer(
+    signaling.role,
+    {
+      onState: handlePeerState,
+      onRemoteStream: handleRemoteStream,
+      onDataOpen: handleDataOpen,
+      onDataClose: handleDataClose,
+      onMessage: handleBoothMessage,
+      onPhoto: handlePhoto,
+      onClockSync: handleClockSync,
+    },
+    { iceServers: iceServers ?? undefined },
+  );
   peer.onSignalOut = (payload) => signaling?.sendSignal(payload);
 
   if (localStream) peer.setLocalStream(localStream);
 
+  armConnectWatchdog();
   store.set({ state: peerPresent ? 'connecting' : store.get().state });
+}
+
+/**
+ * ICE that never completes doesn't fail loudly — it just sits in `Checking`
+ * forever, which the booth reports as `Connecting` while both people stare at
+ * a black partner pane. Give up after a while so the copy tells the truth.
+ */
+function armConnectWatchdog() {
+  window.clearTimeout(connectWatchdog);
+  connectWatchdog = window.setTimeout(() => {
+    if (peerPresent && !dataOpen && store.get().screen === 'booth') {
+      showError('transport', recoverFromDisconnect);
+    }
+  }, CONNECT_WATCHDOG);
+}
+
+function clearConnectWatchdog() {
+  window.clearTimeout(connectWatchdog);
 }
 
 function recoverFromDisconnect() {
@@ -717,9 +749,15 @@ function recoverFromDisconnect() {
 }
 
 function handlePeerState(state: PeerState) {
-  if (state === 'closed') clearPartnerFeed();
+  if (state === 'closed') {
+    clearConnectWatchdog();
+    clearPartnerFeed();
+  }
   if (state === 'failed') {
     peer?.restartIce();
+    // A restart deserves a fresh window, otherwise the original deadline
+    // fires mid-recovery and we declare defeat early.
+    armConnectWatchdog();
     window.setTimeout(() => {
       if (peer && peer.getState() === 'failed') showError('transport', recoverFromDisconnect);
     }, 8000);
@@ -780,6 +818,7 @@ function sendHello() {
 
 function handleDataOpen() {
   dataOpen = true;
+  clearConnectWatchdog();
   sendHello();
   // Anything sent before the channel opened was dropped — push it again now.
   if (store.get().youReady) setReady(true);

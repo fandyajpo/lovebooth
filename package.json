@@ -10,8 +10,8 @@
     "build": "astro build",
     "preview": "astro preview",
     "check": "astro check",
-    "relay": "wrangler dev --port 8787",
-    "relay:deploy": "wrangler deploy"
+    "relay": "wrangler dev --port 8787 --config relay/wrangler.jsonc",
+    "relay:deploy": "wrangler deploy --config relay/wrangler.jsonc"
   },
   "engines": {
     "node": ">=22.12.0"

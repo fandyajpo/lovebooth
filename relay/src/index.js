@@ -20,11 +20,108 @@
  * hibernating Durable Object wakes with its state intact instead of losing the
  * room. The index is rebuilt from live sockets on every message.
  *
+ * The Worker also serves `GET /ice`, which hands the browser its ICE servers
+ * with short-lived TURN credentials minted from TURN_KEY_ID/TURN_API_TOKEN —
+ * both stored as Worker secrets, neither ever shipped to the page.
+ *
  *   npx wrangler dev --port 8787     # local
  *   npx wrangler deploy              # production
+ *   npx wrangler secret put TURN_KEY_ID
+ *   npx wrangler secret put TURN_API_TOKEN
  */
 
 const MAX_MEMBERS = 2;
+
+/* ----------------------------------------------------------------- ice ---- */
+/**
+ * ICE servers are the other half of "can two phones actually talk". A relay
+ * only helps if both ends can punch through, and for two devices on different
+ * home networks that usually needs a TURN server — otherwise the booth pairs,
+ * the signaling works, and the video pane stays black forever.
+ *
+ * Cloudflare Realtime TURN mints short-lived credentials from a TURN key, and
+ * that key must never reach the browser. So the browser asks this Worker
+ * instead, and the Worker keeps the secret. Without TURN_KEY_ID/TURN_API_TOKEN
+ * configured we still answer — with STUN only — so a missing secret degrades to
+ * the old behaviour rather than breaking the booth.
+ *
+ *   curl https://rtc.live.cloudflare.com/v1/turn/keys/$KEY/credentials/generate-ice-servers \
+ *     -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+ *     -d '{"ttl": 3600}'
+ */
+const ICE_TTL_SECONDS = 3600;
+const ICE_REFRESH_LEAD_MS = 5 * 60 * 1000;
+const STUN_FALLBACK = [{ urls: 'stun:stun.l.google.com:19302' }];
+
+let iceCache = null;
+
+const CORS = {
+  'access-control-allow-origin': '*',
+  'access-control-allow-methods': 'GET, OPTIONS',
+  'access-control-allow-headers': 'content-type',
+  'access-control-max-age': '86400',
+};
+
+function jsonResponse(payload) {
+  return new Response(JSON.stringify(payload), {
+    status: 200,
+    headers: {
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': 'no-store',
+      ...CORS,
+    },
+  });
+}
+
+/** Browsers never get to port 53, so a URL with it only costs a timeout. */
+function usableIceServers(list) {
+  if (!Array.isArray(list)) return null;
+  const out = [];
+  for (const server of list) {
+    if (!server || typeof server !== 'object') continue;
+    const raw = server.urls ?? server.url;
+    const urls = (Array.isArray(raw) ? raw : [raw]).filter(
+      (u) => typeof u === 'string' && !/:53([/?]|$)/.test(u),
+    );
+    if (urls.length === 0) continue;
+    out.push({ ...server, urls });
+  }
+  return out.length > 0 ? out : null;
+}
+
+async function mintIceServers(env) {
+  const keyId = env.TURN_KEY_ID;
+  const token = env.TURN_API_TOKEN;
+  if (!keyId || !token) return null;
+
+  const now = Date.now();
+  if (iceCache && iceCache.expiresAt > now + ICE_REFRESH_LEAD_MS) return iceCache.servers;
+
+  const res = await fetch(
+    `https://rtc.live.cloudflare.com/v1/turn/keys/${encodeURIComponent(keyId)}/credentials/generate-ice-servers`,
+    {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ ttl: ICE_TTL_SECONDS }),
+    },
+  );
+  if (!res.ok) throw new Error(`turn credentials: ${res.status}`);
+
+  const servers = usableIceServers((await res.json())?.iceServers);
+  if (!servers) throw new Error('turn credentials: empty');
+  iceCache = { servers, expiresAt: now + ICE_TTL_SECONDS * 1000 };
+  return servers;
+}
+
+async function handleIce(env) {
+  try {
+    const servers = await mintIceServers(env);
+    if (servers) return jsonResponse({ iceServers: servers, source: 'cloudflare-turn' });
+  } catch {
+    /* fall through to STUN — a broken TURN must never take the booth down */
+  }
+  return jsonResponse({ iceServers: STUN_FALLBACK, source: 'stun' });
+}
 
 export class BoothHub {
   constructor(ctx, env) {
@@ -183,6 +280,11 @@ export default {
   async fetch(request, env) {
     const upgrade = request.headers.get('Upgrade');
     if (!upgrade || upgrade.toLowerCase() !== 'websocket') {
+      const { pathname } = new URL(request.url);
+      if (request.method === 'OPTIONS') {
+        return new Response(null, { status: 204, headers: CORS });
+      }
+      if (pathname === '/ice') return handleIce(env);
       return new Response('lovebooth signaling relay\n', {
         status: 200,
         headers: { 'content-type': 'text/plain; charset=utf-8' },
