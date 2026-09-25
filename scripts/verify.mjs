@@ -281,6 +281,47 @@ async function session() {
     );
     console.log(`  rail slots with photos: ${railFilled}`);
     check(railFilled >= 2, 'both photos landed in the rail');
+
+    // --- partner drops out, then comes back -----------------------------
+    await guest.close();
+    await host.waitForFunction(
+      () =>
+        (document.querySelector('#connection-text')?.textContent ?? '').trim() ===
+        'Waiting for your partner',
+      { polling: 250, timeout: 30000 },
+    );
+    // Long enough for an old bug: ICE failing on the dead peer, then an 8s
+    // timer repainting the departure as "the booth is offline".
+    await new Promise((r) => setTimeout(r, 10000));
+
+    const leftStatus = await statusOf(host);
+    const bounced = await host.$eval('#screen-error', (n) => n.classList.contains('is-active'));
+    const leftHint = await host.$eval('#deck-hint', (n) => n.textContent ?? '');
+    console.log(`  host after partner left: "${leftStatus}"`);
+    check(leftStatus === 'Waiting for your partner', 'host waits, never reports an error');
+    check(!bounced, 'host stays in the booth instead of an error card');
+    check(/stepped out/.test(leftHint), 'hint explains how the partner comes back');
+
+    const guest2 = viaRelay
+      ? await (await browser.createBrowserContext()).newPage()
+      : await browser.newPage();
+    watch(guest2, 'guest');
+    guest2.on('pageerror', (e) => errors.push(`guest2: ${e.message}`));
+    await guest2.goto(`${ORIGIN}/?room=${code}`, { waitUntil: 'domcontentloaded' });
+    await settle(guest2);
+    await click(guest2, '#join-submit');
+    await guest2.waitForSelector('#screen-permission.is-active', { timeout: 20000 });
+    await click(guest2, '#perm-action');
+    await guest2.waitForSelector('#screen-booth.is-active', { timeout: 20000 });
+
+    await Promise.all([settled(host), settled(guest2)]);
+    check(await hasPartnerFeed(host), 'host gets the partner stream back');
+    check(await hasPartnerFeed(guest2), 'rejoined guest gets the partner stream back');
+    const kept = await host.$$eval('.rail__slot', (slots) =>
+      slots.filter((s) => (s.getAttribute('style') ?? '').includes('url(')).length,
+    );
+    check(kept >= railFilled, `captured frames survived the drop-out (${kept})`);
+
     check(errors.length === 0, `no page errors${errors.length ? ` → ${errors.join('; ')}` : ''}`);
   } finally {
     await browser.close();

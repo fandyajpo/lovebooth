@@ -353,7 +353,11 @@ function describeHint(state: AppState, camerasReady: boolean, bothReady: boolean
   }
   if (state.retakeWaiting) return 'Retaking frame…';
   if (state.retakeRequested) return 'Waiting for partner…';
-  if (!peerPresent) return 'Waiting for your partner';
+  if (!peerPresent) {
+    return state.partnerLeft
+      ? 'Your partner stepped out — send them the code to come back'
+      : 'Waiting for your partner';
+  }
   if (!dataOpen) return 'Connecting…';
   if (!camerasReady) return 'Partner connected — cameras warming up';
   if (!bothReady) {
@@ -666,22 +670,15 @@ function wireSignaling(client: SignalingClient) {
     peerPresent = true;
     refresh();
     maybeStartPeer();
-    if (store.get().screen === 'error' && store.get().error?.kind === 'partner-left') {
-      recoverFromDisconnect();
-    }
+    // Whatever card we ended up on, they are back — get in front of the booth.
+    if (store.get().screen === 'error') recoverFromDisconnect();
     if (store.get().screen === 'create') el.createStatus.textContent = 'Your partner walked in ✓';
-    store.set({ partnerLeft: false });
+    store.set({ partnerLeft: false, error: null });
   });
 
   client.onPeerLeave(() => {
-    peerPresent = false;
-    dataOpen = false;
-    clearPartnerFeed();
-    refresh();
-    stopCaptureTimers();
-    if (store.get().screen === 'booth' || store.get().state === 'countdown') {
-      showError('partner-left');
-    } else if (store.get().screen === 'create') {
+    partnerOut();
+    if (store.get().screen === 'create') {
       el.createStatus.textContent = 'Waiting for your partner to walk in…';
     }
   });
@@ -748,18 +745,54 @@ function recoverFromDisconnect() {
   maybeStartPeer();
 }
 
+/**
+ * The other side is gone — closed the tab, refreshed, or hit leave.
+ *
+ * The relay has already freed their slot, so the only thing left here is
+ * forgetting them properly: drop the dead peer connection (otherwise
+ * `maybeStartPeer` refuses to build a replacement and the rejoin goes
+ * nowhere), and don't dress a departure up as a network fault. Captured
+ * frames and your own ready flag survive — they come back to the same strip.
+ */
+function partnerOut() {
+  peerPresent = false;
+  dataOpen = false;
+  peer?.close();
+  peer = null;
+  clearConnectWatchdog();
+  clearPartnerFeed();
+  stopCaptureTimers();
+  const inBooth = store.get().screen === 'booth';
+  store.set({
+    partnerLeft: true,
+    error: null,
+    state: inBooth ? 'waiting-for-partner' : store.get().state,
+    partnerReady: false,
+    partnerCameraReady: false,
+    receivingPhoto: false,
+    retakeRequested: false,
+    retakeWaiting: false,
+  });
+  refresh();
+}
+
 function handlePeerState(state: PeerState) {
   if (state === 'closed') {
     clearConnectWatchdog();
     clearPartnerFeed();
   }
   if (state === 'failed') {
+    // Leaving is not a network fault. If we already know they're gone, the
+    // honest copy is "waiting for your partner" — never "the booth is offline".
+    if (!peerPresent) return;
     peer?.restartIce();
     // A restart deserves a fresh window, otherwise the original deadline
     // fires mid-recovery and we declare defeat early.
     armConnectWatchdog();
     window.setTimeout(() => {
-      if (peer && peer.getState() === 'failed') showError('transport', recoverFromDisconnect);
+      if (peerPresent && peer && peer.getState() === 'failed') {
+        showError('transport', recoverFromDisconnect);
+      }
     }, 8000);
   }
 }
@@ -914,9 +947,7 @@ function handleBoothMessage(message: BoothMessage) {
     }
 
     case 'bye': {
-      peerPresent = false;
-      clearPartnerFeed();
-      if (state.screen === 'booth') showError('partner-left');
+      partnerOut();
       break;
     }
 
