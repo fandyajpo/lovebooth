@@ -10,6 +10,8 @@
     "build": "astro build",
     "preview": "astro preview",
     "check": "astro check",
+    "verify": "node scripts/verify.mjs",
+    "verify:protocol": "node scripts/verify.mjs --protocol-only",
     "relay": "wrangler dev --port 8787 --config relay/wrangler.jsonc",
     "relay:deploy": "wrangler deploy --config relay/wrangler.jsonc"
   },
@@ -21,6 +23,7 @@
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.10",
+    "puppeteer-core": "^25.12.0",
     "typescript": "^5.9.3",
     "wrangler": "^4.140.0"
   }

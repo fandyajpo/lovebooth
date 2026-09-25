@@ -23,6 +23,8 @@ opens the same URL and types the four-character code.
 | `npm run dev:host` | dev server reachable from other devices on your LAN |
 | `npm run build` / `npm run preview` | static production build / serve it |
 | `npm run check` | TypeScript + Astro diagnostics |
+| `npm run verify` | relay protocol + a real two-device session (see below) |
+| `npm run verify:protocol` | relay protocol only — fast, no browser needed |
 | `npm run relay` | run the signaling relay locally on `ws://localhost:8787` |
 | `npm run relay:deploy` | push the signaling relay to Cloudflare |
 
@@ -146,9 +148,18 @@ and status/countdown/review changes are announced through `aria-live`.
 
 ## Verification
 
-`npm run check` reports 0 errors. The end-to-end flow (room create → join →
-bad-code rejection → camera → WebRTC → ready → synchronized countdown → photo
-transfer → retake consent → 4 frames → 1200×1800 strip → reset) has been exercised
-headlessly against both signaling transports with zero console errors, including two
-isolated browser profiles joining one room through the deployed relay — the same
-code path two separate phones take.
+`npm run check` reports 0 errors. `npm run verify` drives the real thing: the
+signaling relay protocol, then a two-device session across two isolated browser
+contexts — the same code path two separate phones take — asserting that ICE
+servers were fetched, both partner streams arrived, and a frame transferred.
+
+```bash
+npm run verify:protocol                          # relay only, ~5s, no browser
+npm run verify                                   # + full session on localhost
+RELAY=wss://lovebooth-relay.fandyglitch3.workers.dev \
+ORIGIN=http://192.168.0.105:4321 npm run verify  # + session through the real relay
+```
+
+Serve `ORIGIN` from a non-localhost host to exercise `/ice` and the relay; on
+localhost the app uses its BroadcastChannel transport instead, which the script
+detects and skips those assertions for.
