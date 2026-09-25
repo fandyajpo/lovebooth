@@ -3,6 +3,9 @@
  * screen, button and status line is derived from `state`.
  */
 
+import { loadStyle } from './style';
+import type { TemplateId, ThemeId } from './style';
+
 export type PhotoboothState =
   | 'landing'
   | 'creating-room'
@@ -78,6 +81,10 @@ export interface AppState {
   receivingPhoto: boolean;
   signalingMode: 'relay' | 'local' | null;
   canResume: boolean;
+  /** Strip arrangement. Synced over the data channel — see `BoothMessage`. */
+  template: TemplateId;
+  /** Strip palette. */
+  theme: ThemeId;
 }
 
 export const TOTAL_FRAMES = 4;
@@ -104,6 +111,7 @@ export function createInitialState(): AppState {
     receivingPhoto: false,
     signalingMode: null,
     canResume: false,
+    ...loadStyle(),
   };
 }
 

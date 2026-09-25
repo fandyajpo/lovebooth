@@ -6,6 +6,8 @@
  * included — so nothing about the booth ever touches a server.
  */
 
+import type { TemplateId, ThemeId } from './style';
+
 export type Role = 'host' | 'guest';
 
 export interface OfferSignal {
@@ -26,8 +28,14 @@ export interface IceSignal {
 export type PeerSignal = OfferSignal | AnswerSignal | IceSignal;
 
 export type BoothMessage =
-  /** First message on a fresh channel: who I am, whether my camera is live. */
-  | { t: 'hello'; role: Role; cameraReady: boolean; session: string }
+  /**
+   * First message on a fresh channel: who I am, whether my camera is live,
+   * and which strip style I currently have selected — a peer that joins (or
+   * rejoins) late adopts the style already in play.
+   */
+  | { t: 'hello'; role: Role; cameraReady: boolean; session: string; template: TemplateId; theme: ThemeId }
+  /** Either side restyled the strip; last write wins. */
+  | { t: 'style'; template: TemplateId; theme: ThemeId }
   /** Camera hot-plug / permission changes after the handshake. */
   | { t: 'camera'; ready: boolean; session: string }
   /**

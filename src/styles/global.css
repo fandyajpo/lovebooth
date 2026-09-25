@@ -1963,6 +1963,238 @@ canvas {
   }
 }
 
+/* ================================================================= STYLE == */
+
+.iconbtn svg {
+  display: block;
+}
+
+.iconbtn[aria-expanded='true'] {
+  background: currentColor;
+}
+
+.iconbtn[aria-expanded='true'] svg {
+  mix-blend-mode: difference;
+}
+
+.stylepanel {
+  position: fixed;
+  z-index: 60;
+  left: 50%;
+  bottom: clamp(12px, 3vh, 28px);
+  transform: translateX(-50%);
+  width: min(470px, calc(100vw - 24px));
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px 16px 14px;
+  background: var(--paper);
+  color: var(--ink);
+  border: 3px solid var(--ink);
+  box-shadow: var(--shadow-hard-lg);
+}
+
+.stylepanel[hidden] {
+  display: none;
+}
+
+.stylepanel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.stylepanel__title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.05rem, 4vw, 1.4rem);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.iconbtn--sm {
+  width: 34px;
+  height: 34px;
+  color: var(--ink);
+}
+
+.stylepanel__group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.stylepanel__label {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.stylepanel__row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.stylepanel__row--swatches {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.chipbtn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px;
+  background: var(--mat);
+  color: var(--ink);
+  border: 2px solid rgba(20, 18, 14, 0.25);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s var(--ease-out),
+    transform 0.13s var(--ease-out);
+}
+
+.chipbtn:hover {
+  border-color: var(--ink);
+}
+
+.chipbtn:active {
+  transform: translate(2px, 2px);
+}
+
+.chipbtn[aria-checked='true'] {
+  border-color: var(--ink);
+  background: var(--paper);
+  box-shadow: var(--shadow-hard);
+}
+
+.chipbtn__thumb {
+  flex: 0 0 auto;
+  display: block;
+  width: 30px;
+  height: 39px;
+  color: var(--ink-3);
+}
+
+.chipbtn__thumb svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.chipbtn[aria-checked='true'] .chipbtn__thumb {
+  color: var(--ink);
+}
+
+.chipbtn__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.chipbtn__name {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.chipbtn__blurb {
+  font-family: var(--font-body);
+  font-size: 0.62rem;
+  line-height: 1.25;
+  color: var(--ink-3);
+}
+
+.swatchbtn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 4px;
+  background: var(--mat);
+  color: var(--ink);
+  border: 2px solid rgba(20, 18, 14, 0.25);
+  font: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s var(--ease-out),
+    transform 0.13s var(--ease-out);
+}
+
+.swatchbtn:hover {
+  border-color: var(--ink);
+}
+
+.swatchbtn:active {
+  transform: translate(2px, 2px);
+}
+
+.swatchbtn[aria-checked='true'] {
+  border-color: var(--ink);
+  background: var(--paper);
+  box-shadow: var(--shadow-hard);
+}
+
+.swatchbtn__dot {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 2px solid var(--ink);
+  background: linear-gradient(135deg, var(--sw1) 0 50%, var(--sw2) 50% 100%);
+}
+
+.swatchbtn__name {
+  font-family: var(--font-mono);
+  font-size: 0.58rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.stylepanel__note {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  line-height: 1.5;
+  letter-spacing: 0.04em;
+  text-align: center;
+  color: var(--ink-3);
+}
+
+.chipbtn:focus-visible,
+.swatchbtn:focus-visible,
+.stylepanel .iconbtn:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (max-width: 420px) {
+  .stylepanel__row {
+    grid-template-columns: 1fr;
+  }
+
+  .stylepanel__row--swatches {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .chipbtn {
+    padding: 7px;
+  }
+}
+
 /* ======================================================== REDUCED MOTION == */
 
 @media (prefers-reduced-motion: reduce) {

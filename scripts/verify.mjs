@@ -134,6 +134,138 @@ async function protocol() {
   c.close();
 }
 
+
+/* --------------------------------------------------------------- style -- */
+
+/**
+ * Every template × theme must actually compose: right size, right paper colour,
+ * and far more than one colour on the page (a flat fill means a dead render).
+ */
+async function styles() {
+  section(`style · ${ORIGIN} · 3 templates × 4 themes`);
+  const puppeteer = (await import('puppeteer-core')).default;
+  const browser = await puppeteer.launch({
+    executablePath: CHROME,
+    headless: 'new',
+    args: [`--unsafely-treat-insecure-origin-as-secure=${ORIGIN}`],
+  });
+
+  try {
+    const page = await browser.newPage();
+    await page.goto(ORIGIN, { waitUntil: 'networkidle0' });
+    await new Promise((r) => setTimeout(r, 1200));
+
+    const rows = await page.evaluate(async () => {
+      const mod = await import('/src/lib/photostrip.ts');
+      const swatch = (color) => {
+        const c = document.createElement('canvas');
+        c.width = 80;
+        c.height = 52;
+        const x = c.getContext('2d');
+        x.fillStyle = color;
+        x.fillRect(0, 0, 80, 52);
+        x.fillStyle = '#ff0000';
+        x.fillRect(0, 0, 40, 52);
+        return c.toDataURL('image/png');
+      };
+      const you = ['#3366ff', '#33aa66', '#aa33cc', '#cc8800'].map(swatch);
+      const them = ['#ff5533', '#33bbdd', '#8855ee', '#55aa22'].map(swatch);
+      const out = [];
+      for (const template of ['grid', 'film', 'hero']) {
+        for (const theme of ['paper', 'noir', 'pop', 'mint']) {
+          const canvas = await mod.composePhotostrip({
+            frames: { you, them },
+            roomCode: 'TEST',
+            dateLabel: '01 JAN 2026',
+            style: { template, theme },
+          });
+          const ctx = canvas.getContext('2d', { willReadFrequently: true });
+          const rgb = (x, y) => [...ctx.getImageData(x, y, 1, 1).data].slice(0, 3);
+          const px = (x, y) => rgb(x, y).join(',');
+          const distinct = new Set();
+          for (let y = 0; y < canvas.height; y += 45) {
+            for (let x = 0; x < canvas.width; x += 45) distinct.add(px(x, y));
+          }
+          // Mean colour of the title band vs the sheet behind it: if the two
+          // are close the headline vanished (dark ink on a dark sheet, say).
+          let title = [0, 0, 0];
+          let n = 0;
+          for (let y = 96; y < 140; y += 4) {
+            for (let x = 380; x < 820; x += 4) {
+              const c = rgb(x, y);
+              title[0] += c[0];
+              title[1] += c[1];
+              title[2] += c[2];
+              n += 1;
+            }
+          }
+          title = title.map((v) => v / n);
+          const sheet = rgb(4, 4);
+          const titleGap = Math.hypot(
+            title[0] - sheet[0],
+            title[1] - sheet[1],
+            title[2] - sheet[2],
+          );
+          out.push({
+            template,
+            theme,
+            w: canvas.width,
+            h: canvas.height,
+            corner: px(4, 4),
+            distinct: distinct.size,
+            titleGap,
+          });
+        }
+      }
+      return out;
+    });
+
+    const corners = new Set(rows.map((r) => r.corner));
+    check(rows.length === 12, `all 12 combinations composed (${rows.length})`);
+    check(
+      rows.every((r) => r.w === 1200 && r.h === 1800),
+      'every strip is 1200 × 1800',
+    );
+    check(
+      rows.every((r) => r.distinct > 20),
+      `every strip paints a real image (min distinct colours ${Math.min(...rows.map((r) => r.distinct))})`,
+    );
+    check(corners.size === 4, `each theme paints its own paper (${corners.size} distinct sheets)`);
+    check(
+      rows.every((r) => r.titleGap > 20),
+      `the headline stays legible in every theme (min contrast ${Math.min(...rows.map((r) => r.titleGap)).toFixed(0)})`,
+    );
+
+    // The picker is on every screen, so it works from the landing page too.
+    await click(page, '#style-btn');
+    const opened = await page.$eval('#style-panel', (n) => !n.hidden);
+    check(opened, 'style panel opens');
+    await page.evaluate(() => document.querySelector('[data-template="film"]').click());
+    await page.evaluate(() => document.querySelector('[data-theme="mint"]').click());
+    const picked = await page.evaluate(() => ({
+      template: document.querySelector('[aria-checked="true"][data-template]')?.dataset.template,
+      theme: document.querySelector('[aria-checked="true"][data-theme]')?.dataset.theme,
+      saved: localStorage.getItem('pb:style'),
+    }));
+    check(picked.template === 'film' && picked.theme === 'mint', 'chips move to the new choice');
+    check(/"template":"film"/.test(picked.saved ?? ''), 'the choice is saved locally');
+
+    await page.keyboard.press('Escape');
+    const closed = await page.$eval('#style-panel', (n) => n.hidden);
+    check(closed, 'Escape closes the panel');
+
+    await page.reload({ waitUntil: 'networkidle0' });
+    await new Promise((r) => setTimeout(r, 900));
+    const after = await page.evaluate(() => ({
+      template: document.querySelector('[aria-checked="true"][data-template]')?.dataset.template,
+      theme: document.querySelector('[aria-checked="true"][data-theme]')?.dataset.theme,
+    }));
+    check(after.template === 'film' && after.theme === 'mint', 'the choice survives a reload');
+  } finally {
+    await browser.close();
+  }
+}
+
 /* -------------------------------------------------------------- session -- */
 
 const settle = async (page) => {
@@ -261,6 +393,59 @@ async function session() {
       console.log('  skip  /ice (localhost uses BroadcastChannel, no relay)');
     }
 
+    // --- strip style: one side picks, the other side follows -----------
+    const pickStyle = (page, template, theme) =>
+      page.evaluate(
+        (t, h) => {
+          document.querySelector(`[data-template="${t}"]`)?.click();
+          document.querySelector(`[data-theme="${h}"]`)?.click();
+        },
+        template,
+        theme,
+      );
+    const styleSeen = (page) =>
+      page.evaluate(() => ({
+        template: document.querySelector('[aria-checked="true"][data-template]')?.dataset.template,
+        theme: document.querySelector('[aria-checked="true"][data-theme]')?.dataset.theme,
+        panel: !document.querySelector('#style-panel')?.hidden,
+      }));
+
+    await click(host, '#style-btn');
+    check((await styleSeen(host)).panel, 'style panel opens from the booth bar');
+    await pickStyle(host, 'hero', 'noir');
+    const hostStyle = await styleSeen(host);
+    check(hostStyle.template === 'hero' && hostStyle.theme === 'noir', 'host chips report the pick');
+
+    const guestStyle = await guest
+      .waitForFunction(
+        () =>
+          document.querySelector('[aria-checked="true"][data-template]')?.dataset.template === 'hero' &&
+          document.querySelector('[aria-checked="true"][data-theme]')?.dataset.theme === 'noir'
+            ? true
+            : null,
+        { polling: 250, timeout: 15000 },
+      )
+      .then(() => styleSeen(guest))
+      .catch(() => null);
+    check(!!guestStyle, 'guest adopts the host template and theme');
+    check(guestStyle?.panel === false, 'the choice does not force the panel open on the partner');
+
+    await pickStyle(host, 'grid', 'paper');
+    const backToDefault = await guest
+      .waitForFunction(
+        () =>
+          document.querySelector('[aria-checked="true"][data-template]')?.dataset.template === 'grid' &&
+          document.querySelector('[aria-checked="true"][data-theme]')?.dataset.theme === 'paper'
+            ? true
+            : null,
+        { polling: 250, timeout: 15000 },
+      )
+      .then(() => true)
+      .catch(() => false);
+    check(backToDefault, 'style changes travel both ways');
+    await click(host, '#style-btn');
+    check((await styleSeen(host)).panel === false, 'the panel closes again');
+
     // one frame end to end: synchronized countdown, both captures, both transfers
     await click(host, '#ready-btn').catch(() => undefined);
     await new Promise((r) => setTimeout(r, 400));
@@ -330,7 +515,10 @@ async function session() {
 
 const args = process.argv.slice(2);
 await protocol();
-if (!args.includes('--protocol-only')) await session();
+if (!args.includes('--protocol-only')) {
+  await session();
+  await styles();
+}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

@@ -1,0 +1,94 @@
+---
+/**
+ * StylePicker — template and theme for the strip. Mounted once and shared by
+ * the booth bar and the result screen; both peers see the same choice because
+ * it travels over the data channel.
+ */
+import { TEMPLATES, THEMES } from '../lib/style';
+
+const thumbs: Record<string, string> = {
+  grid: `<svg viewBox="0 0 34 44" aria-hidden="true"><g fill="currentColor">
+    <rect x="1" y="1" width="15" height="9"/><rect x="18" y="1" width="15" height="9"/>
+    <rect x="1" y="12" width="15" height="9"/><rect x="18" y="12" width="15" height="9"/>
+    <rect x="1" y="23" width="15" height="9"/><rect x="18" y="23" width="15" height="9"/>
+    <rect x="1" y="34" width="15" height="9"/><rect x="18" y="34" width="15" height="9"/>
+  </g></svg>`,
+  film: `<svg viewBox="0 0 34 44" aria-hidden="true"><g fill="currentColor">
+    <rect x="6" y="1" width="22" height="9"/><rect x="6" y="12" width="22" height="9"/>
+    <rect x="6" y="23" width="22" height="9"/><rect x="6" y="34" width="22" height="9"/>
+    <rect x="1" y="2" width="3" height="4" rx="1"/><rect x="1" y="10" width="3" height="4" rx="1"/>
+    <rect x="1" y="24" width="3" height="4" rx="1"/><rect x="1" y="36" width="3" height="4" rx="1"/>
+    <rect x="30" y="2" width="3" height="4" rx="1"/><rect x="30" y="10" width="3" height="4" rx="1"/>
+    <rect x="30" y="24" width="3" height="4" rx="1"/><rect x="30" y="36" width="3" height="4" rx="1"/>
+  </g></svg>`,
+  hero: `<svg viewBox="0 0 34 44" aria-hidden="true"><g fill="currentColor">
+    <rect x="1" y="1" width="15" height="20"/><rect x="18" y="1" width="15" height="20"/>
+    <rect x="1" y="23" width="15" height="6"/><rect x="18" y="23" width="15" height="6"/>
+    <rect x="1" y="31" width="15" height="6"/><rect x="18" y="31" width="15" height="6"/>
+    <rect x="1" y="39" width="15" height="4"/><rect x="18" y="39" width="15" height="4"/>
+  </g></svg>`,
+};
+---
+
+<div class="stylepanel" id="style-panel" role="dialog" aria-labelledby="style-title" hidden>
+  <div class="stylepanel__head">
+    <p class="stylepanel__title" id="style-title">Strip style</p>
+    <button
+      class="iconbtn iconbtn--sm"
+      type="button"
+      data-action="close-style"
+      aria-label="Close the style picker"
+    >
+      <span aria-hidden="true">✕</span>
+    </button>
+  </div>
+
+  <div class="stylepanel__group">
+    <p class="stylepanel__label" id="template-label">Template</p>
+    <div class="stylepanel__row" role="radiogroup" aria-labelledby="template-label">
+      {
+        TEMPLATES.map((t) => (
+          <button
+            class="chipbtn"
+            type="button"
+            role="radio"
+            aria-checked="false"
+            data-action="set-template"
+            data-template={t.id}
+          >
+            <span class="chipbtn__thumb" set:html={thumbs[t.id]} />
+            <span class="chipbtn__text">
+              <span class="chipbtn__name">{t.label}</span>
+              <span class="chipbtn__blurb">{t.blurb}</span>
+            </span>
+          </button>
+        ))
+      }
+    </div>
+  </div>
+
+  <div class="stylepanel__group">
+    <p class="stylepanel__label" id="theme-label">Theme</p>
+    <div class="stylepanel__row stylepanel__row--swatches" role="radiogroup" aria-labelledby="theme-label">
+      {
+        THEMES.map((t) => (
+          <button
+            class="swatchbtn"
+            type="button"
+            role="radio"
+            aria-checked="false"
+            data-action="set-theme"
+            data-theme={t.id}
+            aria-label={`${t.label} theme`}
+            style={`--sw1:${t.swatch[0]};--sw2:${t.swatch[1]}`}
+          >
+            <span class="swatchbtn__dot" aria-hidden="true" />
+            <span class="swatchbtn__name">{t.label}</span>
+          </button>
+        ))
+      }
+    </div>
+  </div>
+
+  <p class="stylepanel__note" id="style-note">Classic · Paper — both of you see the same strip.</p>
+</div>

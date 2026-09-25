@@ -128,6 +128,7 @@ src/
     camera.ts              getUserMedia wrapper
     capture.ts             frame grab + guide geometry
     photostrip.ts          1200×1800 canvas composition + download
+    style.ts               strip templates, theme palettes, persistence
     sound.ts               ticks, shutter, chime
     room.ts                room-code generation
   styles/global.css        the whole visual system
@@ -146,12 +147,33 @@ edges on the result, and a flash that fires on every capture.
 `prefers-reduced-motion` disables the animations, focus rings are always visible,
 and status/countdown/review changes are announced through `aria-live`.
 
+## Strip style
+
+The strip has two independent knobs, both picked from the *Style* panel in the
+booth bar or on the result screen:
+
+- **Template** — how the eight photos sit: `grid` (four rows, you and them),
+  `film` (edge-to-edge contact sheet with a sprocket rail), or `hero` (the last
+  instant large, the first three small).
+- **Theme** — the palette the canvas paints with: `paper` (the house look),
+  `noir`, `pop`, `mint`. The booth UI keeps its warm-paper skin; only the
+  exported strip changes.
+
+Both people compose the strip independently, so the choice rides the data
+channel: `BoothMessage`'s `style` variant carries live changes and `hello`
+carries the current one so a late or returning peer adopts it. The host wins on
+handshake; after that it is last-write-wins. The pick is saved to
+`localStorage['pb:style']` and re-rendered live while the result is on screen.
+
 ## Verification
 
 `npm run check` reports 0 errors. `npm run verify` drives the real thing: the
 signaling relay protocol, then a two-device session across two isolated browser
 contexts — the same code path two separate phones take — asserting that ICE
 servers were fetched, both partner streams arrived, and a frame transferred.
+It also switches the strip style on one device and asserts the other follows,
+then composes all twelve template × theme combinations and checks each renders
+1200 × 1800 with its own paper colour.
 
 ```bash
 npm run verify:protocol                          # relay only, ~5s, no browser

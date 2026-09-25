@@ -36,6 +36,14 @@ import { DEFAULT_CAPTURE, captureFrame, canvasToBlob, computeGuideRect } from '.
 import { composePhotostrip, downloadBlob, formatStripDate } from '../lib/photostrip';
 import { playChime, playShutter, playTick, primeAudio, toggleMuted } from '../lib/sound';
 import { formatRoomCode, isValidRoomCode, normalizeRoomCode } from '../lib/room';
+import {
+  getTemplate,
+  getTheme,
+  isTemplateId,
+  isThemeId,
+  saveStyle,
+  type StripStyle,
+} from '../lib/style';
 
 /* ------------------------------------------------------------ constants -- */
 
@@ -147,6 +155,10 @@ let lastFrameIndex = -1;
 let stripCanvas: HTMLCanvasElement | null = null;
 let stripUrl: string | null = null;
 let errorRetry: (() => void) | null = null;
+let styleOpen = false;
+let styleTrigger: HTMLElement | null = null;
+let stripRenderToken = 0;
+let stripRenderTimer: ReturnType<typeof setTimeout> | undefined;
 
 /* --------------------------------------------------------------- utils --- */
 
@@ -228,6 +240,9 @@ const el = {
   landingStamp: $('#landing-stamp')!,
 
   soundBtn: $('#sound-btn') as HTMLButtonElement,
+  styleBtn: $('#style-btn') as HTMLButtonElement,
+  stylePanel: $('#style-panel')!,
+  styleNote: $('#style-note')!,
 };
 
 function blobToDataUrl(blob: Blob): Promise<string> {
@@ -308,6 +323,16 @@ function render(state: AppState) {
     pair.classList.toggle('is-current', index === state.frameIndex && state.screen === 'booth');
   });
 
+  // strip style -----------------------------------------------------------
+  el.stylePanel.querySelectorAll<HTMLElement>('[data-template]').forEach((chip) => {
+    chip.setAttribute('aria-checked', String(chip.dataset.template === state.template));
+  });
+  el.stylePanel.querySelectorAll<HTMLElement>('[data-theme]').forEach((chip) => {
+    chip.setAttribute('aria-checked', String(chip.dataset.theme === state.theme));
+  });
+  const chosenTemplate = getTemplate(state.template);
+  const chosenTheme = getTheme(state.theme);
+  el.styleNote.textContent = `${chosenTemplate.label} · ${chosenTheme.label} — both of you see the same strip.`;
 }
 
 function setReadyCol(node: HTMLElement, ready: boolean) {
@@ -841,11 +866,14 @@ function handleRemoteStream(stream: MediaStream | null) {
 
 function sendHello() {
   if (!peer?.isDataOpen()) return;
+  const { cameraReady, session, template, theme } = store.get();
   peer.send({
     t: 'hello',
     role: currentRole(),
-    cameraReady: store.get().cameraReady,
-    session: store.get().session,
+    cameraReady,
+    session,
+    template,
+    theme,
   });
 }
 
@@ -883,7 +911,25 @@ function handleBoothMessage(message: BoothMessage) {
       if (message.role === 'host' && message.session !== state.session) {
         patch.session = message.session;
       }
+      // The host owns the style on handshake so two people arriving with
+      // different saved choices settle on one immediately. After that either
+      // side may restyle via `style`.
+      if (message.role === 'host' && currentRole() === 'guest') {
+        if (isTemplateId(message.template)) patch.template = message.template;
+        if (isThemeId(message.theme)) patch.theme = message.theme;
+      }
       store.set(patch);
+      if (patch.template || patch.theme) {
+        const next = store.get();
+        saveStyle({ template: next.template, theme: next.theme });
+        restyleStrip();
+      }
+      break;
+    }
+
+    case 'style': {
+      if (!isTemplateId(message.template) || !isThemeId(message.theme)) break;
+      applyStyle({ template: message.template, theme: message.theme }, false);
       break;
     }
 
@@ -1415,7 +1461,6 @@ function paintRail() {
 /* -------------------------------------------------------------- result ---- */
 
 async function generateResult() {
-  const state = store.get();
   reviewTimer = clearTimer(reviewTimer);
   hideReview();
   clearStill('you');
@@ -1423,35 +1468,96 @@ async function generateResult() {
   store.set({ state: 'generating-result', screen: 'result' });
 
   try {
-    const you = frames.you.slice(0, TOTAL_FRAMES).map((v) => v ?? '');
-    const them = frames.them.slice(0, TOTAL_FRAMES).map((v) => v ?? '');
-    const canvas = await composePhotostrip({
-      frames: { you, them },
-      roomCode: state.roomCode,
-      dateLabel: formatStripDate(),
-      title: 'PHOTOBOOTH',
-      tagline: 'MAKE A MEMORY',
-    });
-    stripCanvas = canvas;
-    if (stripUrl) URL.revokeObjectURL(stripUrl);
-    const blob = await new Promise<Blob>((resolve, reject) =>
-      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('encode'))), 'image/png'),
-    );
-    stripUrl = URL.createObjectURL(blob);
+    await renderStrip(true);
+    store.set({ state: 'result' });
+    playChime();
+  } catch {
+    showError('photo-transfer', () => store.set({ screen: 'booth', state: 'ready' }));
+  }
+}
 
-    el.print.dataset.caption = `${state.roomCode ?? 'BOOTH'} · ${formatStripDate()}`;
+/** Rebuild the strip from the frames in hand using the current style. */
+async function renderStrip(reveal: boolean): Promise<void> {
+  const token = ++stripRenderToken;
+  const state = store.get();
+  const you = frames.you.slice(0, TOTAL_FRAMES).map((v) => v ?? '');
+  const them = frames.them.slice(0, TOTAL_FRAMES).map((v) => v ?? '');
+  const canvas = await composePhotostrip({
+    frames: { you, them },
+    roomCode: state.roomCode,
+    dateLabel: formatStripDate(),
+    title: 'PHOTOBOOTH',
+    tagline: 'MAKE A MEMORY',
+    style: { template: state.template, theme: state.theme },
+  });
+  const blob = await new Promise<Blob>((resolve, reject) =>
+    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('encode'))), 'image/png'),
+  );
+  // Someone restyled while we were painting — drop this render.
+  if (token !== stripRenderToken) return;
+
+  stripCanvas = canvas;
+  if (stripUrl) URL.revokeObjectURL(stripUrl);
+  stripUrl = URL.createObjectURL(blob);
+
+  el.print.dataset.caption = `${state.roomCode ?? 'BOOTH'} · ${formatStripDate()}`;
+  if (reveal) {
     el.print.classList.remove('is-revealing');
     el.stripImg.onload = () => {
       el.stripImg.onload = null;
       void el.print.offsetWidth;
       el.print.classList.add('is-revealing');
     };
-    el.stripImg.src = stripUrl;
-    store.set({ state: 'result' });
-    playChime();
-  } catch {
-    showError('photo-transfer', () => store.set({ screen: 'booth', state: 'ready' }));
+  } else {
+    el.stripImg.onload = null;
   }
+  el.stripImg.src = stripUrl;
+}
+
+/* ----------------------------------------------------------- strip style -- */
+
+function setStylePanel(open: boolean, restoreFocus = false) {
+  if (open === styleOpen) return;
+  styleOpen = open;
+  el.stylePanel.hidden = !open;
+  document.querySelectorAll<HTMLElement>('[data-action="open-style"]').forEach((btn) => {
+    btn.setAttribute('aria-expanded', String(open));
+  });
+  if (open) {
+    const target = el.stylePanel.querySelector<HTMLElement>('[aria-checked="true"]');
+    (target ?? el.stylePanel.querySelector<HTMLElement>('[role="radio"]'))?.focus();
+  } else if (restoreFocus) {
+    // Only steal focus back when the person explicitly dismissed the panel —
+    // clicking away should leave focus where they clicked.
+    styleTrigger?.focus();
+  }
+}
+
+/**
+ * Adopt a new template and/or theme. `sync` is false for changes that arrived
+ * from the partner — echoing them straight back would ping-pong forever.
+ */
+function applyStyle(patch: Partial<StripStyle>, sync = true) {
+  const state = store.get();
+  const template = isTemplateId(patch.template) ? patch.template : state.template;
+  const theme = isThemeId(patch.theme) ? patch.theme : state.theme;
+  if (template === state.template && theme === state.theme) return;
+
+  store.set({ template, theme });
+  saveStyle({ template, theme });
+  if (sync) peer?.send({ t: 'style', template, theme });
+  restyleStrip();
+}
+
+/** The strip only exists on the result screen — repaint it there, live. */
+function restyleStrip() {
+  if (store.get().screen !== 'result') return;
+  if (stripRenderTimer) clearTimeout(stripRenderTimer);
+  stripRenderTimer = setTimeout(() => {
+    stripRenderTimer = undefined;
+    if (store.get().screen !== 'result') return;
+    void renderStrip(false).catch(() => undefined);
+  }, 150);
 }
 
 async function downloadStrip() {
@@ -1522,7 +1628,7 @@ function toggleSound() {
 
 /* --------------------------------------------------------------- wiring --- */
 
-function handleAction(action: string) {
+function handleAction(action: string, target: HTMLElement) {
   switch (action) {
     case 'create-room':
       void startCreateRoom();
@@ -1577,6 +1683,19 @@ function handleAction(action: string) {
     case 'new-room':
       goHome();
       break;
+    case 'open-style':
+      styleTrigger = target;
+      setStylePanel(!styleOpen, true);
+      break;
+    case 'close-style':
+      setStylePanel(false, true);
+      break;
+    case 'set-template':
+      applyStyle({ template: target.dataset.template as StripStyle['template'] });
+      break;
+    case 'set-theme':
+      applyStyle({ theme: target.dataset.theme as StripStyle['theme'] });
+      break;
     case 'error-action': {
       const retry = errorRetry;
       errorRetry = null;
@@ -1594,7 +1713,7 @@ function wireEvents() {
     const target = (event.target as HTMLElement | null)?.closest<HTMLElement>('[data-action]');
     if (!target || target.hasAttribute('disabled')) return;
     const action = target.dataset.action;
-    if (action) handleAction(action);
+    if (action) handleAction(action, target);
   });
 
   el.joinForm.addEventListener('submit', (event) => {
@@ -1619,6 +1738,20 @@ function wireEvents() {
   });
 
   el.soundBtn.addEventListener('click', toggleSound);
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape' || !styleOpen) return;
+    event.preventDefault();
+    setStylePanel(false, true);
+  });
+
+  // Tapping anywhere that isn't the panel or its trigger dismisses it.
+  document.addEventListener('click', (event) => {
+    if (!styleOpen) return;
+    const target = event.target as HTMLElement | null;
+    if (target?.closest('#style-panel') || target?.closest('[data-action="open-style"]')) return;
+    setStylePanel(false);
+  });
 
   window.addEventListener('resize', refreshGuides);
   window.addEventListener('orientationchange', () => setTimeout(refreshGuides, 220));
