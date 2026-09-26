@@ -119,3 +119,70 @@ export function playChime(): void {
     osc.stop(at + 0.55);
   });
 }
+
+/**
+ * The little thermal printer feeding the strip out. Noise chopped into paper
+ * rides over a low motor hum; the returned function fades it out early, which
+ * is how the chime takes over the moment the strip is actually ready.
+ */
+export function playPrinter(duration = 2.4): () => void {
+  const stop = () => undefined;
+  if (muted) return stop;
+  const ctx = getAudioContext();
+  if (!ctx) return stop;
+
+  const now = ctx.currentTime;
+  // ~7 paper rides per second, baked into the buffer so no LFO is needed.
+  const cycle = Math.floor(ctx.sampleRate * 0.14);
+  const buffer = ctx.createBuffer(1, cycle, ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < cycle; i += 1) {
+    const feed = 0.35 + 0.65 * Math.abs(Math.sin(Math.PI * (i / cycle) * 7));
+    data[i] = (Math.random() * 2 - 1) * feed;
+  }
+
+  const source = ctx.createBufferSource();
+  source.buffer = buffer;
+  source.loop = true;
+
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'bandpass';
+  filter.frequency.value = 1500;
+  filter.Q.value = 0.8;
+
+  const hum = ctx.createOscillator();
+  hum.type = 'triangle';
+  hum.frequency.value = 132;
+  const humGain = ctx.createGain();
+  humGain.gain.value = 0.35;
+
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(0.0001, now);
+  gain.gain.exponentialRampToValueAtTime(0.12, now + 0.06);
+  gain.gain.setValueAtTime(0.12, now + Math.max(0.2, duration - 0.3));
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+
+  source.connect(filter).connect(gain);
+  hum.connect(humGain).connect(gain);
+  gain.connect(ctx.destination);
+
+  source.start(now);
+  hum.start(now);
+  source.stop(now + duration);
+  hum.stop(now + duration);
+
+  let stopped = false;
+  return () => {
+    if (stopped) return;
+    stopped = true;
+    try {
+      const at = ctx.currentTime;
+      gain.gain.cancelScheduledValues(at);
+      gain.gain.setTargetAtTime(0.0001, at, 0.08);
+      source.stop(at + 0.3);
+      hum.stop(at + 0.3);
+    } catch {
+      /* already finished */
+    }
+  };
+}

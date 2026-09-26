@@ -95,6 +95,10 @@ working exactly as before until you add them.
    shared *I'm ready* / *Capture* control. Capture starts only when both sides are ready.
 5. **Countdown** → host proposes an absolute wall-clock instant, both sides derive
    their own local offset from a ping/pong clock sync and flash on the same tick.
+   Underneath the numbers a **mission card** tells you both what to do with your
+   face. It is derived from that shared instant (`lib/missions.ts`) rather than
+   sent as its own message, so both booths print the same line with nothing new
+   to agree on.
 6. **Review** → the composed frame, with *Keep it* and *Retake*. A retake only
    happens when **both** people ask for one; either person can keep it.
 7. **Result** → the 1200×1800 strip at `/strip`, a PNG download, and four choices
@@ -170,7 +174,8 @@ src/
     capture.ts             frame grab + guide geometry
     photostrip.ts          1200×1800 canvas composition + download
     style.ts               strip templates, theme palettes, persistence
-    sound.ts               ticks, shutter, chime
+    missions.ts            the prompt shown under the countdown
+    sound.ts               ticks, shutter, printer, chime
     room.ts                room-code generation
   styles/global.css        the whole visual system
 astro.config.mjs           dev rewrite for /room/:code
@@ -215,7 +220,8 @@ signaling relay protocol, the routes (each opens on the right screen, `/room/COD
 is shareable, a developed strip reappears at `/strip`), then a two-device session
 across two isolated browser contexts — the same code path two separate phones take
 — asserting that ICE servers were fetched, both partner streams arrived, a frame
-transferred, and a drop-out and rejoin mid-run agree on which frame is current.
+transferred, both booths read the same mission under the countdown, and a
+drop-out and rejoin mid-run agree on which frame is current.
 From the strip onward it checks that *nothing either device presses moves the
 other*: one walks away with *Take another*, the partner stays on their strip and
 gets the invitation, taking it puts both back on an empty frame 01, and *Back to

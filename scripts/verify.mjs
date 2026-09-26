@@ -584,6 +584,21 @@ async function session() {
     // one frame end to end: synchronized countdown, both captures, both transfers
     await shoot(host, guest);
 
+    // Under that one countdown, both booths must be reading the same prompt.
+    const missionOf = (page) =>
+      page
+        .waitForFunction(
+          () => {
+            const el = document.querySelector('#countdown-mission');
+            return el && !el.hidden && el.textContent.trim() ? el.textContent.trim() : false;
+          },
+          { polling: 100, timeout: 3000 },
+        )
+        .then((h) => h.jsonValue())
+        .catch(() => '');
+    const [mine, theirs] = await Promise.all([missionOf(host), missionOf(guest)]);
+    check(Boolean(mine) && mine === theirs, `both booths read the same mission (${mine || 'none'})`);
+
     const nextFrame = (page) =>
       page.waitForFunction(
         () => (document.querySelector('#frame-value')?.textContent ?? '').trim() === '02',

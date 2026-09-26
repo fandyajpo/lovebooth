@@ -33,7 +33,8 @@ import {
 } from '../lib/camera';
 import { DEFAULT_CAPTURE, captureFrame, canvasToBlob, computeGuideRect } from '../lib/capture';
 import { composePhotostrip, downloadBlob, formatStripDate } from '../lib/photostrip';
-import { playChime, playShutter, playTick, primeAudio, toggleMuted } from '../lib/sound';
+import { playChime, playShutter, playTick, playPrinter, primeAudio, toggleMuted } from '../lib/sound';
+import { missionFor } from '../lib/missions';
 import { formatRoomCode, isValidRoomCode, normalizeRoomCode } from '../lib/room';
 import {
   getTemplate,
@@ -219,6 +220,7 @@ const el = {
   countdown: $('#countdown')!,
   countdownNum: $('#countdown-num')!,
   countdownSub: $('#countdown-sub')!,
+  countdownMission: $('#countdown-mission')!,
   flash: $('#flash')!,
 
   review: $('#review')!,
@@ -1418,6 +1420,10 @@ function beginCountdown(frame: number, targetAt: number, initiator: Role) {
   store.set({ state: 'countdown', frameIndex: frame, countdownNumber: 3 });
   el.countdown.hidden = false;
   el.countdownSub.textContent = '3 · 2 · 1 · flash';
+  // Both booths run this with the same `targetAt`, so the prompt matches
+  // without a message of its own.
+  el.countdownMission.textContent = missionFor(targetAt, frame);
+  el.countdownMission.hidden = false;
   pendingCapture = { frame, targetAt, initiator };
   captureFired = false;
   lastCountdownNumber = -1;
@@ -1464,6 +1470,8 @@ function setCountdownNumber(number: number) {
 function hideCountdown() {
   el.countdown.hidden = true;
   el.countdownNum.classList.remove('is-flash');
+  // Hidden so the next countdown starts the card's entrance again.
+  el.countdownMission.hidden = true;
   cancelAnimationFrame(countdownRaf);
 }
 
@@ -1771,9 +1779,11 @@ async function generateResult() {
   clearStill('you');
   clearStill('them');
   store.set({ state: 'generating-result', screen: 'result' });
+  const stopPrinter = playPrinter();
 
   try {
     await renderStrip(true);
+    stopPrinter();
     store.set({ state: 'result' });
     playChime();
     void cacheStrip();
@@ -1781,6 +1791,7 @@ async function generateResult() {
     // a bookmark or a shared link brings it straight back.
     if (location.pathname !== '/strip') parkAt('/strip');
   } catch {
+    stopPrinter();
     showError('photo-transfer', () => store.set({ screen: 'booth', state: 'ready' }));
   }
 }
