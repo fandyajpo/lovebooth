@@ -381,6 +381,15 @@ const settle = async (page) => {
   await new Promise((r) => setTimeout(r, 900));
 };
 
+/** Both sides say ready, then the host presses Capture. */
+const shoot = async (host, partner) => {
+  await click(host, '#ready-btn').catch(() => undefined);
+  await new Promise((r) => setTimeout(r, 400));
+  await click(partner, '#ready-btn').catch(() => undefined);
+  await host.waitForSelector('#capture-btn:not([disabled])', { timeout: 20000 });
+  await click(host, '#capture-btn');
+};
+
 const click = (page, sel) =>
   page.evaluate((s) => {
     const node = document.querySelector(s);
@@ -573,11 +582,7 @@ async function session() {
     check((await styleSeen(host)).panel === false, 'the panel closes again');
 
     // one frame end to end: synchronized countdown, both captures, both transfers
-    await click(host, '#ready-btn').catch(() => undefined);
-    await new Promise((r) => setTimeout(r, 400));
-    await click(guest, '#ready-btn').catch(() => undefined);
-    await host.waitForSelector('#capture-btn:not([disabled])', { timeout: 20000 });
-    await click(host, '#capture-btn');
+    await shoot(host, guest);
 
     const nextFrame = (page) =>
       page.waitForFunction(
@@ -644,11 +649,7 @@ async function session() {
       `both booths agree on frame ${agreed[0] || '?'} after the rejoin`,
     );
 
-    await click(host, '#ready-btn').catch(() => undefined);
-    await new Promise((r) => setTimeout(r, 400));
-    await click(guest2, '#ready-btn').catch(() => undefined);
-    await host.waitForSelector('#capture-btn:not([disabled])', { timeout: 20000 });
-    await click(host, '#capture-btn');
+    await shoot(host, guest2);
     const following = String(Number(agreed[0] || '01') + 1).padStart(2, '0');
     const reaches = (page, want) =>
       page.waitForFunction(
@@ -662,22 +663,14 @@ async function session() {
     // Keep shooting: the fourth frame has nowhere to go but the result screen,
     // which is a route of its own now.
     const shootAgain = async (next) => {
-      await click(host, '#ready-btn').catch(() => undefined);
-      await new Promise((r) => setTimeout(r, 400));
-      await click(guest2, '#ready-btn').catch(() => undefined);
-      await host.waitForSelector('#capture-btn:not([disabled])', { timeout: 20000 });
-      await click(host, '#capture-btn');
+      await shoot(host, guest2);
       await Promise.all([reaches(host, next), reaches(guest2, next)]);
       check(true, `frame ${next} completed`);
     };
 
     await shootAgain(String(Number(following) + 1).padStart(2, '0'));
 
-    await click(host, '#ready-btn').catch(() => undefined);
-    await new Promise((r) => setTimeout(r, 400));
-    await click(guest2, '#ready-btn').catch(() => undefined);
-    await host.waitForSelector('#capture-btn:not([disabled])', { timeout: 20000 });
-    await click(host, '#capture-btn');
+    await shoot(host, guest2);
     // The result screen shows up while the strip is still being composed, so
     // wait for the compose to finish and the address to move with it.
     const developed = (page) =>
@@ -732,11 +725,7 @@ async function session() {
 
     // Shoot a second strip, so there is a finished one to walk away from again.
     for (const next of ['02', '03', '04']) await shootAgain(next);
-    await click(host, '#ready-btn').catch(() => undefined);
-    await new Promise((r) => setTimeout(r, 400));
-    await click(guest2, '#ready-btn').catch(() => undefined);
-    await host.waitForSelector('#capture-btn:not([disabled])', { timeout: 20000 });
-    await click(host, '#capture-btn');
+    await shoot(host, guest2);
     await Promise.all([developed(host), developed(guest2)]);
     check(true, 'the second strip is on both screens');
 

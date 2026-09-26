@@ -286,6 +286,24 @@ function clearTimer(ref: ReturnType<typeof setTimeout> | undefined): undefined {
   return undefined;
 }
 
+/**
+ * Move the address bar without reloading. Every screen that means something
+ * (`/room/CODE`, `/strip`) parks here, so a reload lands where you left off.
+ */
+function parkAt(path: string) {
+  try {
+    history.replaceState(null, '', path);
+  } catch {
+    /* a navigation racing us has already won — the bar is right either way */
+  }
+}
+
+/** …and the room this booth is in, which is the shareable form of that. */
+function parkAtRoom() {
+  const code = store.get().roomCode;
+  if (code) parkAt(`/room/${code}`);
+}
+
 /* ------------------------------------------------------------ rendering -- */
 
 function refresh() {
@@ -520,6 +538,11 @@ function teardownRun() {
   frames.them.length = 0;
   partnerRedo = false;
   partnerRedoDismissed = false;
+  // The strip belongs to the booth we are walking out of: dropping the canvas
+  // here is what stops the next one from announcing a strip it never printed.
+  if (stripUrl) URL.revokeObjectURL(stripUrl);
+  stripUrl = null;
+  stripCanvas = null;
   clearStill('you');
   clearStill('them');
   hideReview();
@@ -753,13 +776,9 @@ async function startCreateRoom() {
       client.mode === 'relay' ? 'Connected · over the internet' : 'Connected · same device';
     clearStoredFrames();
     saveSession(code, 'host');
-    try {
-      // The address is the product: putting it in the bar makes the code
-      // shareable and a reload rejoin instead of printing a second booth.
-      history.replaceState(null, '', `/room/${code}`);
-    } catch {
-      /* ignore */
-    }
+    // The address is the product: putting it in the bar makes the code
+    // shareable and a reload rejoin instead of printing a second booth.
+    parkAtRoom();
     maybeStartPeer();
   } catch (err) {
     signaling?.close();
@@ -826,11 +845,7 @@ async function submitJoin(codeInput: string) {
     });
     saveSession(client.roomCode ?? code, client.role ?? 'guest');
     restoreFrames(client.roomCode ?? code);
-    try {
-      history.replaceState(null, '', `/room/${client.roomCode ?? code}`);
-    } catch {
-      /* ignore */
-    }
+    parkAtRoom();
     maybeStartPeer();
     return true;
   } catch (err) {
@@ -1764,11 +1779,7 @@ async function generateResult() {
     void cacheStrip();
     // The strip is a destination of its own: park the URL here so a reload,
     // a bookmark or a shared link brings it straight back.
-    try {
-      if (location.pathname !== '/strip') history.replaceState(null, '', '/strip');
-    } catch {
-      /* ignore */
-    }
+    if (location.pathname !== '/strip') parkAt('/strip');
   } catch {
     showError('photo-transfer', () => store.set({ screen: 'booth', state: 'ready' }));
   }
@@ -1904,14 +1915,7 @@ function takeAnother() {
   detachedStrip = null;
   resetFrames();
   store.set({ screen: 'booth', state: 'ready', error: null });
-  const code = store.get().roomCode;
-  if (code) {
-    try {
-      history.replaceState(null, '', `/room/${code}`);
-    } catch {
-      /* ignore */
-    }
-  }
+  parkAtRoom();
   // Whoever is already in the booth re-announces their readiness, and we land
   // on the frame they are sitting on.
   sendHello();
@@ -1920,14 +1924,7 @@ function takeAnother() {
 /** Back to the room card we came from: still connected, still in the session. */
 function backToResultRoom() {
   backToRoom();
-  const code = store.get().roomCode;
-  if (code) {
-    try {
-      history.replaceState(null, '', `/room/${code}`);
-    } catch {
-      /* ignore */
-    }
-  }
+  parkAtRoom();
 }
 
 /**
@@ -2027,9 +2024,8 @@ function handleAction(action: string, target: HTMLElement) {
       void downloadStrip();
       break;
     case 'take-another':
-      takeAnother();
-      break;
     case 'join-redo':
+      // Same door either way: the invitation is just a second handle on it.
       takeAnother();
       break;
     case 'back-to-room-result':
