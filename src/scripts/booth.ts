@@ -1498,17 +1498,19 @@ async function fireCapture(frame: number) {
   }
 
   const canvas = captureFrame(video, DEFAULT_CAPTURE);
-  const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
-  frames.you[frame] = dataUrl;
-  setStill('you', dataUrl);
-  freeze('you');
-  paintRail();
-  saveFrames();
-
-  store.set({ state: 'waiting-for-photo', receivingPhoto: false });
-
   try {
-    const blob = await canvasToBlob(canvas, 'image/jpeg', 0.86);
+    // Encode once: the frame we keep and the frame we send are the same bytes
+    // at the same quality, and a shot costs one JPEG instead of two.
+    const blob = await canvasToBlob(canvas, 'image/jpeg', 0.9);
+    const dataUrl = await blobToDataUrl(blob);
+    frames.you[frame] = dataUrl;
+    setStill('you', dataUrl);
+    freeze('you');
+    paintRail();
+    saveFrames();
+
+    store.set({ state: 'waiting-for-photo', receivingPhoto: false });
+
     await peer?.sendPhoto(
       { id: `${state.session}-${frame}-${Date.now()}`, frame, session: state.session, mime: blob.type },
       blob,
