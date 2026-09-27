@@ -378,7 +378,15 @@ const settle = async (page) => {
     polling: 250,
     timeout: 20000,
   });
-  await new Promise((r) => setTimeout(r, 900));
+  // The landing card carries `f/2.8 · ISO 400` in the markup and the date
+  // only once the orchestrator has run `initialScreen()`. Waiting for that
+  // beats sleeping a flat 900ms hoping the module got evaluated — it is set
+  // on every route, before any of the branchy work that follows.
+  await page.waitForFunction(
+    () => /^\d{2} \d{2} \d{4}$/.test(document.querySelector('#landing-stamp')?.textContent ?? ''),
+    { polling: 100, timeout: 20000 },
+  );
+  await new Promise((r) => setTimeout(r, 300));
 };
 
 /** Both sides say ready, then the host presses Capture. */
