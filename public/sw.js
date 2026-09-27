@@ -15,10 +15,31 @@
  */
 const VERSION = 'lovebooth-v1';
 
-/** What "the booth still opens" needs: the page, and the record the browser
- *  reads to offer the install. A missing icon must not fail the install, so
- *  each one is added on its own. */
-const PRECACHE = ['/', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png'];
+/** What "the booth still opens" needs: the page, the record the browser reads
+ *  to offer the install, and the prints that decorate the landing hero — a
+ *  hole where a photo should be is worse than a few hundred kilobytes. A
+ *  missing one must not fail the install, so each is added on its own. */
+const PRECACHE = [
+  '/',
+  '/manifest.webmanifest',
+  '/icons/icon-192.png',
+  '/icons/icon-512.png',
+  '/photos/frame-01.jpg',
+  '/photos/frame-02.jpg',
+  '/photos/frame-03.jpg',
+  '/photos/frame-04.jpg',
+  '/photos/frame-05.jpg',
+  '/photos/frame-06.jpg',
+  '/photos/frame-07.jpg',
+  '/photos/frame-08.jpg',
+  '/photos/frame-09.jpg',
+  '/photos/frame-10.jpg',
+  '/photos/frame-11.jpg',
+  '/photos/frame-12.jpg',
+  '/photos/strip-01.jpg',
+  '/photos/strip-02.jpg',
+  '/photos/strip-03.jpg',
+];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(

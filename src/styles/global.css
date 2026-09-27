@@ -575,6 +575,20 @@ canvas {
   margin-top: clamp(4px, 2vw, 12px);
 }
 
+/* The CTAs stop short of the card so the right-hand half stays clear for the
+   pile of prints. Phones keep the full width — there the pile moves out of
+   the way instead. */
+@media (min-width: 561px) {
+  .landing__actions {
+    max-width: min(540px, 52%);
+  }
+  /* Same rule for the sheet: on a laptop the four thumbs were reaching three
+     quarters of the way across the card, into the pile's half. */
+  .landing .contact-sheet {
+    max-width: min(520px, 52%);
+  }
+}
+
 .landing__actions .btn {
   flex: 1 1 220px;
 }
@@ -650,6 +664,119 @@ canvas {
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--ink-3);
+}
+
+/* drifting prints behind the landing hero --------------------------------- */
+
+/* The hero is wrapped so the pile can be clipped to the first screen instead
+   of sliding under the instruction leaflet. */
+.landing__hero {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  /* the card's rhythm, kept intact through the new wrapper */
+  gap: inherit;
+}
+
+.landing__hero > .fly {
+  z-index: 0;
+}
+
+.landing__hero > *:not(.fly) {
+  position: relative;
+  z-index: 1;
+}
+
+.fly {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  /* driven by the pointer, in px, then scaled by each shot's depth */
+  --px: 0px;
+  --py: 0px;
+}
+
+.fly__slot {
+  position: absolute;
+  left: var(--x, 72%);
+  top: var(--y, 40%);
+  width: calc(var(--w, 196px) * var(--k, 1));
+  margin: 0;
+  padding: 5px;
+  background: #fffdf6;
+  border: 2px solid var(--ink);
+  box-shadow: var(--shadow-hard);
+  rotate: var(--r, 0deg);
+  translate: calc(var(--px) * var(--d, 0.7)) calc(var(--py) * var(--d, 0.7));
+  z-index: var(--z, 7);
+  animation:
+    fly-appear 0.7s var(--ease-out) both var(--delay, 0s),
+    fly-drift var(--dur, 8s) ease-in-out infinite var(--delay, 0s);
+}
+
+.fly__slot img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* The shallow end of the pile — sits back, out of focus. */
+.fly__slot.is-far {
+  --o: 0.62;
+  filter: blur(1.5px);
+}
+
+@keyframes fly-appear {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: var(--o, 1);
+  }
+}
+
+@keyframes fly-drift {
+  0%,
+  100% {
+    transform: translateY(-7px) rotate(-1.6deg);
+  }
+  50% {
+    transform: translateY(8px) rotate(1.8deg);
+  }
+}
+
+@media (max-width: 899px) {
+  .fly {
+    --k: 0.82;
+  }
+  .fly__slot[data-view='wide'] {
+    display: none;
+  }
+}
+
+@media (max-width: 560px) {
+  .fly {
+    --k: 0.58;
+    /* every row runs the full width, so the pile is parked in a band of its
+       own at the foot of the hero instead of lying over the buttons */
+    inset: auto 0 0 0;
+    height: clamp(124px, 34vw, 156px);
+  }
+  .landing__hero {
+    padding-bottom: clamp(124px, 34vw, 156px);
+  }
+  .fly__slot[data-view='mid'] {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fly__slot {
+    animation: none;
+    translate: none;
+  }
 }
 
 /* landing instruction leaflet -------------------------------------------- */

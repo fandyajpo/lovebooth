@@ -37,6 +37,8 @@ import { composePhotostrip, downloadBlob, formatStripDate } from '../lib/photost
 import { playChime, playShutter, playTick, playPrinter, primeAudio, toggleMuted } from '../lib/sound';
 import { missionFor } from '../lib/missions';
 import { formatRoomCode, isValidRoomCode, normalizeRoomCode } from '../lib/room';
+// Decorates the landing hero — it finds its own container and no-ops without one.
+import './flying';
 import {
   getTemplate,
   getTheme,

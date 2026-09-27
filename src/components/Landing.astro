@@ -7,38 +7,91 @@
 <section class="screen landing is-active" id="screen-landing" aria-labelledby="landing-title">
   <div class="corners" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
 
-  <header class="landing__meta">
-    <span>REMOTE · 2 PERSON · BOOTH</span>
-    <span class="rec">REC</span>
-  </header>
-
-  <div class="landing__body">
-    <p class="eyebrow">No. 002 — Two exposures, one print</p>
-
-    <h1 class="landing__title" id="landing-title">
-      <span>Photo</span>
-      <span class="outline">Booth</span>
-    </h1>
-
-    <p class="landing__lede">Two cameras. <em>One little memory.</em></p>
-
-    <div class="landing__actions">
-      <a class="btn btn--solid" href="/create">Create a room</a>
-      <a class="btn" href="/room">Join a room</a>
+  <div class="landing__hero">
+    <!-- The pile of prints that drifts behind everything. Nothing here is
+         interactive and nothing here is content — the pictures are drawn at
+         build time by scripts/make-photos.mjs. -->
+    <div class="fly" aria-hidden="true">
+      <figure class="fly__slot" data-view="both" style="--x:52%;--y:11%;--w:206px;--r:-8deg;--d:.8">
+        <img src="/photos/frame-01.jpg" alt="" width="400" height="261" loading="lazy" decoding="async" />
+      </figure>
+      <figure class="fly__slot" data-view="mid" style="--x:67%;--y:7%;--w:176px;--r:6deg;--d:.5">
+        <img src="/photos/frame-02.jpg" alt="" width="400" height="261" loading="lazy" decoding="async" />
+      </figure>
+      <figure class="fly__slot fly__slot--strip" data-view="mid" style="--x:86%;--y:15%;--w:152px;--r:7deg;--d:1">
+        <img src="/photos/strip-01.jpg" alt="" width="360" height="540" loading="lazy" decoding="async" />
+      </figure>
+      <figure class="fly__slot" data-view="wide" style="--x:95%;--y:31%;--w:196px;--r:-5deg;--d:.7">
+        <img src="/photos/frame-03.jpg" alt="" width="400" height="261" loading="lazy" decoding="async" />
+      </figure>
+      <figure class="fly__slot" data-view="both" style="--x:58%;--y:26%;--w:168px;--r:9deg;--d:.45">
+        <img src="/photos/frame-04.jpg" alt="" width="400" height="261" loading="lazy" decoding="async" />
+      </figure>
+      <figure class="fly__slot" data-view="mid" style="--x:74%;--y:33%;--w:214px;--r:-9deg;--d:.9">
+        <img src="/photos/frame-05.jpg" alt="" width="400" height="261" loading="lazy" decoding="async" />
+      </figure>
+      <figure class="fly__slot" data-view="wide" style="--x:89%;--y:44%;--w:182px;--r:5deg;--d:.6">
+        <img src="/photos/frame-06.jpg" alt="" width="400" height="261" loading="lazy" decoding="async" />
+      </figure>
+      <figure class="fly__slot" data-view="both" style="--x:64%;--y:47%;--w:192px;--r:-6deg;--d:1.1">
+        <img src="/photos/frame-07.jpg" alt="" width="400" height="261" loading="lazy" decoding="async" />
+      </figure>
+      <figure class="fly__slot fly__slot--strip" data-view="mid" style="--x:96%;--y:57%;--w:146px;--r:-7deg;--d:.75">
+        <img src="/photos/strip-02.jpg" alt="" width="360" height="540" loading="lazy" decoding="async" />
+      </figure>
+      <figure class="fly__slot" data-view="wide" style="--x:79%;--y:56%;--w:174px;--r:8deg;--d:.5">
+        <img src="/photos/frame-08.jpg" alt="" width="400" height="261" loading="lazy" decoding="async" />
+      </figure>
+      <figure class="fly__slot" data-view="both" style="--x:71%;--y:68%;--w:212px;--r:-4deg;--d:.85">
+        <img src="/photos/frame-09.jpg" alt="" width="400" height="261" loading="lazy" decoding="async" />
+      </figure>
+      <figure class="fly__slot" data-view="wide" style="--x:93%;--y:73%;--w:188px;--r:6deg;--d:1">
+        <img src="/photos/frame-10.jpg" alt="" width="400" height="261" loading="lazy" decoding="async" />
+      </figure>
+      <figure class="fly__slot" data-view="mid" style="--x:60%;--y:82%;--w:180px;--r:-10deg;--d:.55">
+        <img src="/photos/frame-11.jpg" alt="" width="400" height="261" loading="lazy" decoding="async" />
+      </figure>
+      <figure class="fly__slot fly__slot--strip" data-view="wide" style="--x:78%;--y:90%;--w:150px;--r:9deg;--d:.95">
+        <img src="/photos/strip-03.jpg" alt="" width="360" height="540" loading="lazy" decoding="async" />
+      </figure>
+      <figure class="fly__slot" data-view="both" style="--x:94%;--y:88%;--w:170px;--r:-7deg;--d:.65">
+        <img src="/photos/frame-12.jpg" alt="" width="400" height="261" loading="lazy" decoding="async" />
+      </figure>
     </div>
 
-    <div class="landing__resume" id="landing-resume" hidden>
-      <span>Pick up where you left off —</span>
-      <strong id="resume-code">····</strong>
-      <button class="btn btn--solid" type="button" data-action="resume-room">Resume</button>
-    </div>
-  </div>
+    <header class="landing__meta">
+      <span>REMOTE · 2 PERSON · BOOTH</span>
+      <span class="rec">REC</span>
+    </header>
 
-  <div class="contact-sheet" aria-hidden="true">
-    <span data-n="01"></span>
-    <span data-n="02"></span>
-    <span data-n="03"></span>
-    <span data-n="04"></span>
+    <div class="landing__body">
+      <p class="eyebrow">No. 002 — Two exposures, one print</p>
+
+      <h1 class="landing__title" id="landing-title">
+        <span>Photo</span>
+        <span class="outline">Booth</span>
+      </h1>
+
+      <p class="landing__lede">Two cameras. <em>One little memory.</em></p>
+
+      <div class="landing__actions">
+        <a class="btn btn--solid" href="/create">Create a room</a>
+        <a class="btn" href="/room">Join a room</a>
+      </div>
+
+      <div class="landing__resume" id="landing-resume" hidden>
+        <span>Pick up where you left off —</span>
+        <strong id="resume-code">····</strong>
+        <button class="btn btn--solid" type="button" data-action="resume-room">Resume</button>
+      </div>
+    </div>
+
+    <div class="contact-sheet" aria-hidden="true">
+      <span data-n="01"></span>
+      <span data-n="02"></span>
+      <span data-n="03"></span>
+      <span data-n="04"></span>
+    </div>
   </div>
 
   <section class="howto" aria-labelledby="howto-title">

@@ -173,6 +173,7 @@ src/
   layouts/Base.astro      head, shell, pre-boot screen selection
   components/              Photobooth shell + each screen/widget
   scripts/booth.ts         orchestrator: state ⇄ DOM, room, frames, review
+  scripts/flying.ts        the drifting prints behind the landing hero
   lib/
     signaling.ts           SignalingClient interface + 2 transports
     ice.ts                 fetches ICE/TURN servers from the relay
@@ -209,6 +210,16 @@ Disposable-camera / photobooth-receipt: warm paper `#efe9dd`, ink `#14120e`, an
 action red `#e8380d`, and a caution yellow `#f5b800`. Anton for display, Space Mono
 for labels, Space Grotesk for body. Film grain over everything, scalloped receipt
 edges on the result, and a flash that fires on every capture.
+
+The landing hero drifts with a pile of prints — twelve frames and three strips,
+clipped to the first screen, shuffled into a fresh arrangement on every visit and
+leaning away from the pointer. They are drawn by `scripts/make-photos.mjs`
+(`npm run photos`): every face, backdrop and grain speck is canvas code in this
+repository, and the three strips come out of the real `composePhotostrip`, so a
+print on the landing page is exactly what the booth would hand you. Nothing is
+downloaded from anywhere, which is also why the CSP needs no exception for them.
+On phones the pile moves to a band of its own under the contact sheet instead of
+lying over the buttons; `prefers-reduced-motion` parks it.
 
 `prefers-reduced-motion` disables the animations, focus rings are always visible,
 and status/countdown/review changes are announced through `aria-live`.
