@@ -750,6 +750,26 @@ async function session() {
       'a live strip still offers Take another',
     );
 
+    // Sharing is asserted, never pressed: pressing it would open a system
+    // sheet this harness has no way to dismiss. The button's presence has to
+    // agree with what the browser says it can actually share.
+    const canShareFiles = await host.evaluate(() => {
+      if (typeof navigator.share !== 'function' || typeof navigator.canShare !== 'function') {
+        return false;
+      }
+      try {
+        return navigator.canShare({
+          files: [new File([new Blob(['x'], { type: 'image/png' })], 'a.png', { type: 'image/png' })],
+        });
+      } catch {
+        return false;
+      }
+    });
+    check(
+      (await host.$eval('#share-btn', (n) => !n.hidden)) === canShareFiles,
+      `the share button matches what this browser can share (${canShareFiles})`,
+    );
+
     /* --- from the strip onward, nobody may press anybody else's buttons --- */
 
     const activeId = (p) => p.$eval('.screen.is-active', (n) => n.id).catch(() => '<none>');

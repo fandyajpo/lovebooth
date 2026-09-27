@@ -162,6 +162,9 @@ let connectWatchdog: ReturnType<typeof setTimeout> | undefined;
 let watchdog: ReturnType<typeof setTimeout> | undefined;
 let retakeTimer: ReturnType<typeof setTimeout> | undefined;
 let copyFlagTimer: ReturnType<typeof setTimeout> | undefined;
+let shareLabelTimer: ReturnType<typeof setTimeout> | undefined;
+/** Memoised answer to "will this browser hand a file to the OS?" */
+let shareFilesOk: boolean | null = null;
 
 let pendingCapture: { frame: number; targetAt: number; initiator: Role } | null = null;
 let captureFired = false;
@@ -261,6 +264,8 @@ const el = {
   print: $('#print')!,
   stripImg: $('#strip-img') as HTMLImageElement,
   takeAnotherBtn: $('#take-another-btn') as HTMLButtonElement,
+  shareBtn: $('#share-btn') as HTMLButtonElement,
+  shareLabel: $('#share-label')!,
   resultStyleBtn: $('#result-style-btn') as HTMLButtonElement,
   resultRoomBtn: $('#result-room-btn') as HTMLButtonElement,
   redoHint: $('#redo-hint')!,
@@ -420,6 +425,9 @@ function render(state: AppState) {
   setHidden(el.takeAnotherBtn, detached);
   setHidden(el.resultStyleBtn, detached);
   setHidden(el.resultRoomBtn, detached);
+  // Sharing is an OS capability, not a design decision — where the phone
+  // cannot take a file the button simply is not there.
+  setHidden(el.shareBtn, !canShareStrip());
 
   // Voice — offered only where a partner can actually hear it.
   const canTalk = peerPresent && dataOpen;
@@ -2000,6 +2008,68 @@ async function downloadStrip() {
 }
 
 /**
+ * Web Share exists only where the OS will accept a file, and the answer is
+ * the same for the whole session — so it is asked once, with a stand-in file,
+ * and remembered.
+ */
+function canShareStrip(): boolean {
+  if (shareFilesOk !== null) return shareFilesOk;
+  shareFilesOk = false;
+  if (typeof navigator.share !== 'function' || typeof navigator.canShare !== 'function') {
+    return false;
+  }
+  try {
+    shareFilesOk = navigator.canShare({
+      files: [new File([new Blob(['x'], { type: 'image/png' })], 'strip.png', { type: 'image/png' })],
+    });
+  } catch {
+    /* Safari used to throw on the option itself */
+  }
+  return shareFilesOk;
+}
+
+/** The finished strip as a file: the canvas when this booth composed it, the
+ *  saved URL when the strip was opened from `/strip`. */
+async function stripFile(): Promise<File | null> {
+  let blob: Blob | null = null;
+  if (stripCanvas) {
+    blob = await new Promise<Blob | null>((resolve) => stripCanvas!.toBlob(resolve, 'image/png'));
+  }
+  if (!blob && stripUrl) blob = await (await fetch(stripUrl)).blob();
+  if (!blob && detachedStrip) blob = await (await fetch(detachedStrip)).blob();
+  if (!blob) return null;
+  return new File([blob], 'photobooth-strip.png', { type: blob.type || 'image/png' });
+}
+
+/**
+ * Hand the strip to whatever the phone already shares with. Nothing leaves
+ * this device that the visitor did not just press, and a sheet that gets
+ * dismissed is not a failure — the download button sits right beside it.
+ */
+async function shareStrip() {
+  if (!canShareStrip()) return;
+  try {
+    const file = await stripFile();
+    if (!file) return;
+    await navigator.share({
+      files: [file],
+      title: 'Our photobooth strip',
+      text: 'Two cameras, one little memory.',
+    });
+    flagShare('Shared');
+  } catch {
+    /* cancelled, or the OS declined — say nothing */
+  }
+}
+
+function flagShare(message: string) {
+  shareLabelTimer = clearTimer(shareLabelTimer);
+  setText(el.shareLabel, message);
+  if (!message) return;
+  shareLabelTimer = setTimeout(() => setText(el.shareLabel, 'Share'), 2600);
+}
+
+/**
  * Shoot another strip — a decision about *this* device only.
  *
  * It puts this booth back in the run and leaves the partner on their strip,
@@ -2171,6 +2241,9 @@ function handleAction(action: string, target: HTMLElement) {
       break;
     case 'download':
       void downloadStrip();
+      break;
+    case 'share-strip':
+      void shareStrip();
       break;
     case 'take-another':
     case 'join-redo':

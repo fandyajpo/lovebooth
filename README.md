@@ -104,9 +104,10 @@ working exactly as before until you add them.
    to agree on.
 6. **Review** → the composed frame, with *Keep it* and *Retake*. A retake only
    happens when **both** people ask for one; either person can keep it.
-7. **Result** → the 1200×1800 strip at `/strip`, a PNG download, and four choices
-   that belong to the device that presses them: *Take another*, *Style*,
-   *Back to the room* and *Exit*. None of them moves the partner. Start another
+7. **Result** → the 1200×1800 strip at `/strip`, a PNG download, a *Share*
+   button that hands the file to whatever the phone already shares with (shown
+   only where the OS will take one), and four choices that belong to the device
+   that presses them: *Take another*, *Style*, *Back to the room* and *Exit*. None of them moves the partner. Start another
    strip and they are *invited* — a card on their own screen offering *Join them*
    or *Stay here* — never dragged along.
 
