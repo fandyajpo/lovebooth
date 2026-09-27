@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "astro dev",
     "dev:host": "astro dev --host",
-    "build": "astro build",
+    "build": "astro build && node scripts/check-csp.mjs",
     "preview": "astro preview",
     "check": "astro check",
     "verify": "node scripts/verify.mjs",
