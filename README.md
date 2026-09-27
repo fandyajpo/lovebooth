@@ -187,8 +187,15 @@ src/
     sound.ts               ticks, shutter, printer, chime
     room.ts                room-code generation
   styles/global.css        the whole visual system
+public/
+  sw.js                   service worker: fresh HTML, cached hashed bundles
+  manifest.webmanifest    installable app record
+  icons/                  192 / 512 / maskable app icons
+scripts/
+  verify.mjs              end-to-end suite (see Verification)
+  check-csp.mjs           fails the build if the CSP hashes drift
 astro.config.mjs           dev rewrite for /room/:code
-vercel.json                production rewrite for /room/:code
+vercel.json                rewrites, CSP and security headers
 relay/
   src/index.js             signaling relay + `GET /ice` (TURN credentials)
   wrangler.jsonc           deploy config
@@ -221,6 +228,37 @@ channel: `BoothMessage`'s `style` variant carries live changes and `hello`
 carries the current one so a late or returning peer adopts it. The host wins on
 handshake; after that it is last-write-wins. The pick is saved to
 `localStorage['pb:style']` and re-rendered live while the result is on screen.
+
+## Offline
+
+The app installs to a home screen: `public/manifest.webmanifest`, 192/512 and
+maskable icons, and a service worker registered on any secure origin (a plain
+`http://` LAN preview correctly skips it). The worker keeps exactly two rules —
+navigations are **network-first**, because a room must never boot against
+yesterday's bundle, and the content-hashed `/_astro/*` files are **cache-first**,
+because the URL already is the fingerprint. Load the bundle offline and the
+booth still opens; the relay connection, unsurprisingly, does not survive.
+
+## Security headers
+
+`vercel.json` sets them for every route:
+
+- **Content-Security-Policy** — `default-src 'self'`, `object-src 'none'`,
+  `frame-ancestors 'none'`, images allowed only from `self data: blob:`, and
+  `connect-src` limited to this origin and the deployed relay (add your
+  `PUBLIC_SIGNALING_URL` there too if you ever point it elsewhere). `style-src`
+  keeps `'unsafe-inline'` because the film rail, the flash and the review frames
+  are driven by inline style attributes.
+- `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
+  `Referrer-Policy: no-referrer`, HSTS, and a `Permissions-Policy` that switches
+  off every sensor the booth never asks for — camera and microphone are
+  deliberately left to their own defaults.
+
+Two scripts have to run before first paint (the deep-link redirect and the
+pre-boot screen picker), and both stay inline on purpose: moving them out would
+cost a render-blocking round trip. The CSP therefore allows them **by hash**, so
+`npm run build` runs `scripts/check-csp.mjs` and fails if editing either script
+drifted them. A stale hash cannot ship.
 
 ## Verification
 
