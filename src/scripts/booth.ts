@@ -284,6 +284,15 @@ const el = {
   styleNote: $('#style-note')!,
 };
 
+/**
+ * Node lists render() walks on every tick. The rail and the style chips are
+ * written into the page once and never rebuilt, so they are collected here
+ * instead of by three `querySelectorAll` calls per state change.
+ */
+const railPairs = document.querySelectorAll<HTMLElement>('.rail__pair');
+const styleTemplateChips = document.querySelectorAll<HTMLElement>('#style-panel [data-template]');
+const styleThemeChips = document.querySelectorAll<HTMLElement>('#style-panel [data-theme]');
+
 function blobToDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -322,13 +331,30 @@ function parkAtRoom() {
 
 /* ------------------------------------------------------------ rendering -- */
 
+/* Every one of these is a DOM write, and a write that sets the value a node
+   already has still invalidates style for the screen. render() runs on every
+   state tick — during a countdown that is many times a second — so each one
+   only fires when the value actually moved. */
+function setText(node: HTMLElement, text: string) {
+  if (node.textContent !== text) node.textContent = text;
+}
+
+function setHidden(node: HTMLElement, hidden: boolean) {
+  if (node.hidden !== hidden) node.hidden = hidden;
+}
+
+function setAttr(node: HTMLElement, name: string, value: string) {
+  if (node.getAttribute(name) !== value) node.setAttribute(name, value);
+}
+
 function refresh() {
   render(store.get());
 }
 
 function render(state: AppState) {
   for (const [name, node] of Object.entries(el.screens)) {
-    node.classList.toggle('is-active', name === state.screen);
+    const active = name === state.screen;
+    if (node.classList.contains('is-active') !== active) node.classList.toggle('is-active', active);
   }
 
   // The panel is anchored to the screen it was opened from — leave that screen
@@ -336,12 +362,12 @@ function render(state: AppState) {
   // back to the trigger.
   if (styleOpen && styleScreen !== null && state.screen !== styleScreen) setStylePanel(false);
 
-  el.barRoom.textContent = state.roomCode ?? '····';
+  setText(el.barRoom, state.roomCode ?? '····');
 
   // connection status -----------------------------------------------------
   const status = describeStatus(state);
-  el.statusText.textContent = status.text;
-  el.status.dataset.tone = status.tone;
+  setText(el.statusText, status.text);
+  if (el.status.dataset.tone !== status.tone) el.status.dataset.tone = status.tone;
 
   // ready row -------------------------------------------------------------
   setReadyCol(el.readyCols.you, state.youReady);
@@ -352,20 +378,20 @@ function render(state: AppState) {
   const bothReady = state.youReady && state.partnerReady;
 
   if (!camerasReady) {
-    el.readyBtn.hidden = true;
-    el.captureBtn.hidden = true;
+    setHidden(el.readyBtn, true);
+    setHidden(el.captureBtn, true);
   } else if (!state.youReady) {
-    el.readyBtn.hidden = false;
-    el.captureBtn.hidden = true;
+    setHidden(el.readyBtn, false);
+    setHidden(el.captureBtn, true);
   } else {
-    el.readyBtn.hidden = true;
-    el.captureBtn.hidden = false;
-    el.captureBtn.disabled = !bothReady;
-    el.captureBtn.textContent = bothReady ? 'Capture' : 'Waiting for your partner…';
+    setHidden(el.readyBtn, true);
+    setHidden(el.captureBtn, false);
+    if (el.captureBtn.disabled !== !bothReady) el.captureBtn.disabled = !bothReady;
+    setText(el.captureBtn, bothReady ? 'Capture' : 'Waiting for your partner…');
   }
 
   // hint ------------------------------------------------------------------
-  el.hint.textContent = describeHint(state, camerasReady, bothReady);
+  setText(el.hint, describeHint(state, camerasReady, bothReady));
 
   // frame counter ---------------------------------------------------------
   const value = String(state.frameIndex + 1).padStart(2, '0');
@@ -380,59 +406,68 @@ function render(state: AppState) {
   lastFrameIndex = state.frameIndex;
 
   // film rail -------------------------------------------------------------
-  document.querySelectorAll<HTMLElement>('.rail__pair').forEach((pair) => {
-    const index = Number(pair.dataset.pair);
-    pair.classList.toggle('is-current', index === state.frameIndex && state.screen === 'booth');
-  });
+  const onBooth = state.screen === 'booth';
+  for (const pair of railPairs) {
+    const current = Number(pair.dataset.pair) === state.frameIndex && onBooth;
+    if (pair.classList.contains('is-current') !== current) {
+      pair.classList.toggle('is-current', current);
+    }
+  }
 
   // A strip opened from `/strip` was developed elsewhere — there is no partner
   // to re-shoot with and no live peer to sync a restyle to.
   const detached = state.screen === 'result' && detachedStrip !== null;
-  el.takeAnotherBtn.hidden = detached;
-  el.resultStyleBtn.hidden = detached;
-  el.resultRoomBtn.hidden = detached;
+  setHidden(el.takeAnotherBtn, detached);
+  setHidden(el.resultStyleBtn, detached);
+  setHidden(el.resultRoomBtn, detached);
 
   // Voice — offered only where a partner can actually hear it.
   const canTalk = peerPresent && dataOpen;
   const voiceOn = state.voice;
-  el.micBtn.hidden = !canTalk;
-  el.micBtn.setAttribute('aria-pressed', String(voiceOn));
-  el.micBtn.setAttribute('aria-label', voiceOn ? 'Stop talking' : 'Talk to your partner');
-  el.micBtn.title = voiceOn ? 'Stop talking' : 'Talk to your partner';
-  el.resultMicBtn.hidden = !canTalk || detached;
-  el.resultMicBtn.setAttribute('aria-pressed', String(voiceOn));
-  el.resultMicLabel.textContent = voiceOn ? 'Talking…' : 'Talk';
-  el.partnerMic.hidden = !state.partnerVoice;
+  const voiceLabel = voiceOn ? 'Stop talking' : 'Talk to your partner';
+  setHidden(el.micBtn, !canTalk);
+  setAttr(el.micBtn, 'aria-pressed', String(voiceOn));
+  setAttr(el.micBtn, 'aria-label', voiceLabel);
+  if (el.micBtn.title !== voiceLabel) el.micBtn.title = voiceLabel;
+  setHidden(el.resultMicBtn, !canTalk || detached);
+  setAttr(el.resultMicBtn, 'aria-pressed', String(voiceOn));
+  setText(el.resultMicLabel, voiceOn ? 'Talking…' : 'Talk');
+  setHidden(el.partnerMic, !state.partnerVoice);
 
   // The invitation to follow the partner into another run. It only ever shows
   // where it can be acted on, and never appears on its own initiative.
-  el.redoHint.hidden = !(
-    state.screen === 'result' &&
-    partnerRedo &&
-    !partnerRedoDismissed &&
-    !detached
+  setHidden(
+    el.redoHint,
+    !(state.screen === 'result' && partnerRedo && !partnerRedoDismissed && !detached),
   );
 
   // strip style -----------------------------------------------------------
-  el.stylePanel.querySelectorAll<HTMLElement>('[data-template]').forEach((chip) => {
+  for (const chip of styleTemplateChips) {
     const checked = chip.dataset.template === state.template;
-    chip.setAttribute('aria-checked', String(checked));
-    chip.tabIndex = checked ? 0 : -1;
-  });
-  el.stylePanel.querySelectorAll<HTMLElement>('[data-theme]').forEach((chip) => {
+    if (chip.getAttribute('aria-checked') !== String(checked)) {
+      chip.setAttribute('aria-checked', String(checked));
+      chip.tabIndex = checked ? 0 : -1;
+    }
+  }
+  for (const chip of styleThemeChips) {
     const checked = chip.dataset.theme === state.theme;
-    chip.setAttribute('aria-checked', String(checked));
-    chip.tabIndex = checked ? 0 : -1;
-  });
+    if (chip.getAttribute('aria-checked') !== String(checked)) {
+      chip.setAttribute('aria-checked', String(checked));
+      chip.tabIndex = checked ? 0 : -1;
+    }
+  }
   const chosenTemplate = getTemplate(state.template);
   const chosenTheme = getTheme(state.theme);
-  el.styleNote.textContent = `${chosenTemplate.label} · ${chosenTheme.label} — both of you see the same strip.`;
+  setText(
+    el.styleNote,
+    `${chosenTemplate.label} · ${chosenTheme.label} — both of you see the same strip.`,
+  );
 }
 
 function setReadyCol(node: HTMLElement, ready: boolean) {
-  node.classList.toggle('is-ready', ready);
+  if (node.classList.contains('is-ready') !== ready) node.classList.toggle('is-ready', ready);
   const state = node.querySelector('.ready__state');
-  if (state) state.textContent = ready ? '✓ Ready' : 'Not ready';
+  if (state) setText(state as HTMLElement, ready ? '✓ Ready' : 'Not ready');
 }
 
 function describeStatus(state: AppState): { text: string; tone: string } {
