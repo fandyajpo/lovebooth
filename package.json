@@ -10,6 +10,7 @@
     "build": "astro build && node scripts/check-csp.mjs",
     "preview": "astro preview",
     "check": "astro check",
+    "photos": "node scripts/make-photos.mjs",
     "verify": "node scripts/verify.mjs",
     "verify:protocol": "node scripts/verify.mjs --protocol-only",
     "relay": "wrangler dev --port 8787 --config relay/wrangler.jsonc",

@@ -191,9 +191,11 @@ public/
   sw.js                   service worker: fresh HTML, cached hashed bundles
   manifest.webmanifest    installable app record
   icons/                  192 / 512 / maskable app icons
+  photos/                 the printed frames and strips the hero drifts with
 scripts/
   verify.mjs              end-to-end suite (see Verification)
   check-csp.mjs           fails the build if the CSP hashes drift
+  make-photos.mjs         draws public/photos/ (see Visual system)
 astro.config.mjs           dev rewrite for /room/:code
 vercel.json                rewrites, CSP and security headers
 relay/
