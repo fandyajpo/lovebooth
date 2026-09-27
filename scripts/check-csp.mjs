@@ -25,8 +25,10 @@ const walk = (dir) =>
 const emitted = new Set();
 for (const file of walk(dist).filter((path) => path.endsWith('.html'))) {
   const html = readFileSync(file, 'utf8');
-  for (const [, source] of html.matchAll(/<script>([\s\S]*?)<\/script>/g)) {
-    emitted.add(`'sha256-${createHash('sha256').update(source, 'utf8').digest('base64')}'`);
+  for (const [, attrs, source] of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/g)) {
+    if (/\bsrc\s*=/.test(attrs)) continue;
+    const hash = createHash('sha256').update(source, 'utf8').digest('base64');
+    emitted.add(`'sha256-${hash}'`);
   }
 }
 

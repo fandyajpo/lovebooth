@@ -255,10 +255,12 @@ booth still opens; the relay connection, unsurprisingly, does not survive.
   deliberately left to their own defaults.
 
 Two scripts have to run before first paint (the deep-link redirect and the
-pre-boot screen picker), and both stay inline on purpose: moving them out would
-cost a render-blocking round trip. The CSP therefore allows them **by hash**, so
-`npm run build` runs `scripts/check-csp.mjs` and fails if editing either script
-drifted them. A stale hash cannot ship.
+pre-boot screen picker), and they stay inline on purpose: moving them out would
+cost a render-blocking round trip. The service worker registers from a third
+inline script. All three are allowed **by hash** — never `'unsafe-inline'` — so
+`npm run build` runs `scripts/check-csp.mjs`, which reads every `<script>`
+Astro emitted (attributes included) and fails the build on any drift. A stale
+hash cannot ship.
 
 ## Verification
 
