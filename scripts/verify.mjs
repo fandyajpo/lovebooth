@@ -310,6 +310,23 @@ async function routes() {
     };
 
     check((await open('/')) === 'screen-landing', '/ opens on the landing page');
+
+    const manifest = await page.evaluate(async () => {
+      const link = document.querySelector('link[rel="manifest"]');
+      if (!link) return null;
+      try {
+        const res = await fetch(link.href);
+        const json = await res.json().catch(() => null);
+        return { ok: res.ok, icons: (json?.icons ?? []).length, display: json?.display };
+      } catch {
+        return null;
+      }
+    });
+    check(
+      !!manifest?.ok && manifest.icons >= 2 && manifest.display === 'standalone',
+      `the app ships an installable manifest (${manifest?.icons ?? 0} icons)`,
+    );
+
     check((await open('/room')) === 'screen-join', '/room opens on the join form');
     check((await open('/strip')) === 'screen-error', '/strip with nothing cached explains itself');
 
