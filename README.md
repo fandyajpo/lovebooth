@@ -252,3 +252,11 @@ localhost the app uses its BroadcastChannel transport instead, which the script
 detects and skips those assertions for. Use your own LAN address — DHCP hands a
 new one out often enough that the example above will go stale; check it with
 `ipconfig getifaddr en0`.
+
+## Copyright
+
+© 2026 Fandy Ahmad. All rights reserved.
+
+This repository is published for viewing only. No license is granted — the code,
+the copy, and the design may not be copied, redistributed, or used to build a
+derivative work without permission. Having read it does not make it yours.

@@ -641,6 +641,17 @@ canvas {
   text-shadow: 0 0 12px rgba(232, 56, 13, 0.35);
 }
 
+/* Its own row so the privacy promise and the date keep their corners. */
+.colophon {
+  width: 100%;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: clamp(0.58rem, 1.6vw, 0.7rem);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
 /* landing instruction leaflet -------------------------------------------- */
 
 .howto {
