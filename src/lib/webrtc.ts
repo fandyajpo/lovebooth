@@ -58,6 +58,8 @@ export class BoothPeer {
   private chain: Promise<unknown> = Promise.resolve();
 
   private localTracks = new Set<RTCRtpSender>();
+  /** Kept so muting the mic reuses its transceiver instead of adding a second. */
+  private audioSender: RTCRtpSender | null = null;
   private state: PeerState = 'idle';
 
   /** guestClock − hostClock, measured by the host. */
@@ -340,6 +342,25 @@ export class BoothPeer {
 
     const sender = this.pc.addTrack(track, stream);
     this.localTracks.add(sender);
+  }
+
+  /**
+   * Open or close the microphone. The first add renegotiates on its own
+   * through `onnegotiationneeded`; muting only stops sending on the same
+   * transceiver, so a quick mute never costs an offer/answer round trip.
+   */
+  setLocalMicrophone(track: MediaStreamTrack | null, stream: MediaStream | null): void {
+    if (!track || !stream) {
+      if (this.audioSender) void this.audioSender.replaceTrack(null);
+      return;
+    }
+    if (this.audioSender) {
+      void this.audioSender.replaceTrack(track);
+      this.localTracks.add(this.audioSender);
+      return;
+    }
+    this.audioSender = this.pc.addTrack(track, stream);
+    this.localTracks.add(this.audioSender);
   }
 
   restartIce(): void {

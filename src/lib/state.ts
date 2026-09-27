@@ -35,6 +35,7 @@ export type ErrorKind =
   | 'camera-unsupported'
   | 'camera-denied'
   | 'camera-unavailable'
+  | 'mic-unavailable'
   | 'room-not-found'
   | 'room-full'
   | 'bad-code'
@@ -82,6 +83,10 @@ export interface AppState {
   receivingPhoto: boolean;
   signalingMode: 'relay' | 'local' | null;
   canResume: boolean;
+  /** My microphone is open. Opted into per device, never assumed. */
+  voice: boolean;
+  /** Their microphone is open — the badge over their camera. */
+  partnerVoice: boolean;
   /** Strip arrangement. Synced over the data channel — see `BoothMessage`. */
   template: TemplateId;
   /** Strip palette. */
@@ -112,6 +117,8 @@ export function createInitialState(): AppState {
     receivingPhoto: false,
     signalingMode: null,
     canResume: false,
+    voice: false,
+    partnerVoice: false,
     ...loadStyle(),
   };
 }

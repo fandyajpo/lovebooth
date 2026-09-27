@@ -92,7 +92,10 @@ working exactly as before until you add them.
    `0/O/1/I/L`), copy button, live join status.
 3. **Camera permission** → local `getUserMedia` only.
 4. **Booth** → both cameras live, connection status, per-frame film rail, and one
-   shared *I'm ready* / *Capture* control. Capture starts only when both sides are ready.
+   shared *I'm ready* / *Capture* control. Capture starts only when both sides are
+   ready. Next to the mute sits a *Talk* button: press it and your microphone joins
+   the peer connection — they see a live badge on your camera, press it again and
+   it is gone.
 5. **Countdown** → host proposes an absolute wall-clock instant, both sides derive
    their own local offset from a ping/pong clock sync and flash on the same tick.
    Underneath the numbers a **mission card** tells you both what to do with your
@@ -150,6 +153,11 @@ dev server, or deploy. `npm run verify`'s `routes` section exercises this agains
   or logged anywhere.
 - The only network traffic the app generates outside the P2P connection is the
   signaling exchange described above.
+- Voice is **opt-in per device**: the microphone opens on a press of the *Talk*
+  button, rides the same peer-to-peer connection as the photos, and closes the
+  moment it is pressed again or the screen it lives on is left. Nothing opens
+  the microphone on its own, and the badge on the partner's camera only ever
+  reflects a state both booths were told about.
 - There is no account, no database, no analytics.
 
 ## Layout
@@ -170,7 +178,7 @@ src/
     webrtc.ts              BoothPeer: negotiation, data channel, clock sync
     state.ts               state machine + store
     protocol.ts            typed messages between the two peers
-    camera.ts              getUserMedia wrapper
+    camera.ts              camera + opt-in microphone wrappers
     capture.ts             frame grab + guide geometry
     photostrip.ts          1200×1800 canvas composition + download
     style.ts               strip templates, theme palettes, persistence
@@ -220,8 +228,10 @@ signaling relay protocol, the routes (each opens on the right screen, `/room/COD
 is shareable, a developed strip reappears at `/strip`), then a two-device session
 across two isolated browser contexts — the same code path two separate phones take
 — asserting that ICE servers were fetched, both partner streams arrived, a frame
-transferred, both booths read the same mission under the countdown, and a
-drop-out and rejoin mid-run agree on which frame is current.
+transferred, both booths read the same mission under the countdown, a pressed talk
+button delivers a real microphone to the partner's booth (badge on) and closes
+again on both sides, and a drop-out and rejoin mid-run agree on which frame is
+current.
 From the strip onward it checks that *nothing either device presses moves the
 other*: one walks away with *Take another*, the partner stays on their strip and
 gets the invitation, taking it puts both back on an empty frame 01, and *Back to

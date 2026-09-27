@@ -613,6 +613,45 @@ async function session() {
     console.log(`  rail slots with photos: ${railFilled}`);
     check(railFilled >= 2, 'both photos landed in the rail');
 
+    // --- voice ----------------------------------------------------------
+    // One press has to open a real microphone and hand it to the partner.
+    await click(host, '#mic-btn');
+    const micLive = await host
+      .waitForFunction(
+        () => document.querySelector('#mic-btn')?.getAttribute('aria-pressed') === 'true',
+        { polling: 100, timeout: 5000 },
+      )
+      .then(() => true)
+      .catch(() => false);
+    check(micLive, 'the talk button goes live');
+
+    const heard = await guest
+      .waitForFunction(
+        () => {
+          const audio = document.querySelector('#voice-audio');
+          const stream = audio ? audio.srcObject : null;
+          return !!stream && stream.getAudioTracks().length > 0;
+        },
+        { polling: 250, timeout: 20000 },
+      )
+      .then(() => true)
+      .catch(() => false);
+    check(heard, "the partner's booth receives the microphone");
+
+    const badgeOn = await guest.$eval('#partner-mic', (n) => !n.hidden);
+    check(badgeOn, 'the partner sees the live badge');
+
+    await click(host, '#mic-btn');
+    await guest
+      .waitForFunction(() => document.querySelector('#partner-mic')?.hidden === true, {
+        polling: 100,
+        timeout: 5000,
+      })
+      .catch(() => undefined);
+    const badgeOff = await guest.$eval('#partner-mic', (n) => n.hidden);
+    const micOff = await host.$eval('#mic-btn', (n) => n.getAttribute('aria-pressed') === 'false');
+    check(badgeOff && micOff, 'hanging up closes it on both sides');
+
     // --- partner drops out, then comes back -----------------------------
     await guest.close();
     await host.waitForFunction(

@@ -34,7 +34,8 @@ export type BoothMessage =
    * rejoins) late adopts the style already in play. `frame` and `done` say how
    * far along this booth is, so one that reloads mid-run can be moved back to
    * the frame the other is still on instead of deadlocking on mismatched
-   * frame numbers.
+   * frame numbers. `voice` re-syncs whose microphone is open — a badge that
+   * outlives a reload would be lying about what is being transmitted.
    */
   | {
       t: 'hello';
@@ -45,6 +46,7 @@ export type BoothMessage =
       done: boolean;
       template: TemplateId;
       theme: ThemeId;
+      voice: boolean;
     }
   /** Either side restyled the strip; last write wins. */
   | { t: 'style'; template: TemplateId; theme: ThemeId }
@@ -79,6 +81,11 @@ export type BoothMessage =
    * apply — no session, no frame, nothing that could move a screen.
    */
   | { t: 'redo' }
+  /**
+   * One side opened or closed their microphone. Voice is opted into per
+   * device, so like `redo` this moves nothing but a badge and a mute.
+   */
+  | { t: 'voice'; on: boolean }
   /** Polite goodbye before a tab closes. */
   | { t: 'bye' };
 

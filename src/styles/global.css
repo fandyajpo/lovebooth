@@ -321,6 +321,26 @@ canvas {
   text-decoration-thickness: 2px;
 }
 
+/* Voice is off until its button says otherwise — the filled state is the only
+   place the booth ever claims to be listening. */
+#mic-btn[aria-pressed='true'] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--paper);
+}
+
+#result-mic-btn[aria-pressed='true'] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--paper);
+}
+
+/* The partner's voice plays on its own element so the camera frame stays a
+   photobooth window and the audio keeps going between screens. */
+.voice-audio {
+  display: none;
+}
+
 /* --------------------------------------------------------------- shell --- */
 
 #app {
@@ -1294,6 +1314,30 @@ canvas {
   animation: rec-blink 1.4s steps(1, end) infinite;
 }
 
+.cam__mic {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  padding: 0.25em 0.55em;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: clamp(0.54rem, 1.5vw, 0.66rem);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--paper);
+  background: rgba(12, 11, 8, 0.74);
+  border: 1px solid var(--accent);
+}
+
+.cam__mic span {
+  color: var(--accent);
+  animation: rec-blink 1.4s steps(1, end) infinite;
+}
+
 .cam__guide {
   position: absolute;
   left: 6%;
@@ -2076,6 +2120,13 @@ canvas {
   }
   .bar {
     flex-wrap: wrap;
+    /* Three tools and a room chip have to sit on one line with the brand
+       before them — on a 390px phone the padding is what gives way first. */
+    padding-inline: clamp(8px, 2vw, 22px);
+    gap: clamp(6px, 1.6vw, 16px);
+  }
+  .bar__tools {
+    gap: 6px;
   }
   .status {
     order: 3;
@@ -2398,6 +2449,14 @@ canvas {
 
   .chipbtn {
     padding: 7px;
+  }
+}
+
+/* Below this the bar has no room for the code on top of the three tools, and
+   the room screen's ticket still prints it — so the repeat goes first. */
+@media (max-width: 380px) {
+  .chip--room {
+    display: none;
   }
 }
 

@@ -27,6 +27,7 @@ import type { BoothMessage, Role } from '../lib/protocol';
 import {
   CameraError,
   getCameraStream,
+  getMicrophoneStream,
   isCameraSupported,
   stopStream,
   watchStreamEnd,
@@ -75,6 +76,12 @@ const COPY: Record<ErrorKind, FriendlyError> = {
     kind: 'camera-unavailable',
     title: 'No camera found',
     body: 'Connect a camera, close anything else using it, then try again.',
+    action: 'Try again',
+  },
+  'mic-unavailable': {
+    kind: 'mic-unavailable',
+    title: 'The microphone stayed quiet',
+    body: 'Allow microphone access to talk to your partner — the camera keeps working either way.',
     action: 'Try again',
   },
   'room-not-found': {
@@ -134,6 +141,8 @@ const store = new BoothStore(createInitialState());
 let signaling: SignalingClient | null = null;
 let peer: BoothPeer | null = null;
 let localStream: MediaStream | null = null;
+/** Held so the mic can be stopped the moment the booth is left. */
+let micStream: MediaStream | null = null;
 let stopWatchLocal: (() => void) | null = null;
 
 let peerPresent = false;
@@ -265,6 +274,11 @@ const el = {
   landingStamp: $('#landing-stamp')!,
 
   soundBtn: $('#sound-btn') as HTMLButtonElement,
+  micBtn: $('#mic-btn') as HTMLButtonElement,
+  resultMicBtn: $('#result-mic-btn') as HTMLButtonElement,
+  resultMicLabel: $('#result-mic-label')!,
+  partnerMic: $('#partner-mic')!,
+  voiceAudio: $('#voice-audio') as HTMLAudioElement,
   styleBtn: $('#style-btn') as HTMLButtonElement,
   stylePanel: $('#style-panel')!,
   styleNote: $('#style-note')!,
@@ -378,6 +392,18 @@ function render(state: AppState) {
   el.resultStyleBtn.hidden = detached;
   el.resultRoomBtn.hidden = detached;
 
+  // Voice — offered only where a partner can actually hear it.
+  const canTalk = peerPresent && dataOpen;
+  const voiceOn = state.voice;
+  el.micBtn.hidden = !canTalk;
+  el.micBtn.setAttribute('aria-pressed', String(voiceOn));
+  el.micBtn.setAttribute('aria-label', voiceOn ? 'Stop talking' : 'Talk to your partner');
+  el.micBtn.title = voiceOn ? 'Stop talking' : 'Talk to your partner';
+  el.resultMicBtn.hidden = !canTalk || detached;
+  el.resultMicBtn.setAttribute('aria-pressed', String(voiceOn));
+  el.resultMicLabel.textContent = voiceOn ? 'Talking…' : 'Talk';
+  el.partnerMic.hidden = !state.partnerVoice;
+
   // The invitation to follow the partner into another run. It only ever shows
   // where it can be acted on, and never appears on its own initiative.
   el.redoHint.hidden = !(
@@ -484,6 +510,10 @@ let leaveArmTimer = 0;
 
 function backToRoom() {
   disarmLeave();
+  // The talk button only exists on the booth and the result screen, so
+  // leaving either takes the microphone with it instead of leaving a light
+  // on that nobody can see or switch off.
+  stopVoice();
   store.set({
     screen: roomScreen,
     state: roomScreen === 'create' ? 'waiting-for-partner' : 'joining-room',
@@ -535,6 +565,7 @@ function goHome() {
 
 function teardownRun() {
   stopCaptureTimers();
+  stopVoice();
   clearConnectWatchdog();
   frames.you.length = 0;
   frames.them.length = 0;
@@ -1047,6 +1078,9 @@ function clearPartnerFeed() {
     video.srcObject = null;
     video.load();
   }
+  el.voiceAudio.srcObject = null;
+  // Their camera is gone, and so is anything it was carrying.
+  if (store.get().partnerVoice) store.set({ partnerVoice: false });
   clearStill('them');
   el.camPartner.classList.remove('is-live', 'is-frozen');
   el.camPartner.classList.add('is-waiting');
@@ -1061,6 +1095,9 @@ function handleRemoteStream(stream: MediaStream | null) {
   }
 
   video.srcObject = stream;
+  // The camera frame stays a muted picture; their voice rides the same stream
+  // on its own element, which keeps playing while another screen is up.
+  el.voiceAudio.srcObject = stream;
   el.camPartner.classList.add('is-live');
   el.camPartner.classList.remove('is-waiting');
 
@@ -1093,6 +1130,7 @@ function sendHello() {
     done: screen === 'result',
     template,
     theme,
+    voice: micStream !== null,
   });
 }
 
@@ -1194,7 +1232,12 @@ function handleBoothMessage(message: BoothMessage) {
 
   switch (message.t) {
     case 'hello': {
-      const patch: Partial<AppState> = { partnerCameraReady: message.cameraReady };
+      const patch: Partial<AppState> = {
+        partnerCameraReady: message.cameraReady,
+        // Their mic is part of the handshake so a reload can't leave a live
+        // badge switched on over a closed microphone.
+        partnerVoice: message.voice ?? false,
+      };
       if (message.role === 'host' && message.session !== state.session) {
         patch.session = message.session;
       }
@@ -1278,6 +1321,12 @@ function handleBoothMessage(message: BoothMessage) {
       partnerRedo = true;
       partnerRedoDismissed = false;
       refresh();
+      break;
+    }
+    case 'voice': {
+      // Their microphone opened or closed. A badge over their camera — and
+      // nothing on this side changes screen, focus or sound.
+      store.set({ partnerVoice: message.on });
       break;
     }
 
@@ -1949,6 +1998,55 @@ function exitBooth() {
   goHome();
 }
 
+/* ---------------------------------------------------------------- voice --- */
+
+/**
+ * Open this device's microphone — a call, not a broadcast, so it starts on a
+ * press and never by itself. The track joins the camera stream, which is what
+ * makes the partner's one `ontrack` for audio land in the very MediaStream
+ * their video already shows instead of replacing it.
+ */
+async function toggleVoice() {
+  if (micStream) {
+    stopVoice();
+    return;
+  }
+  if (!peer || !peerPresent || !localStream) return;
+
+  try {
+    micStream = await getMicrophoneStream();
+  } catch {
+    showError('mic-unavailable', () => void toggleVoice());
+    return;
+  }
+
+  const track = micStream.getAudioTracks()[0];
+  if (!track) {
+    stopVoice();
+    return;
+  }
+  localStream.addTrack(track);
+  peer.setLocalMicrophone(track, localStream);
+  store.set({ voice: true });
+  peer.send({ t: 'voice', on: true });
+}
+
+/** Give the room its quiet back — called on a press, and on the way out. */
+function stopVoice() {
+  const wasOn = store.get().voice || micStream !== null;
+  if (micStream) {
+    stopStream(micStream);
+    micStream = null;
+  }
+  if (localStream) {
+    for (const track of localStream.getAudioTracks()) localStream.removeTrack(track);
+  }
+  peer?.setLocalMicrophone(null, null);
+  if (!wasOn) return;
+  store.set({ voice: false });
+  peer?.send({ t: 'voice', on: false });
+}
+
 /* ------------------------------------------------------------ lifecycle --- */
 
 async function copyCode() {
@@ -2005,6 +2103,9 @@ function handleAction(action: string, target: HTMLElement) {
       break;
     case 'back-to-room':
       backToRoom();
+      break;
+    case 'toggle-voice':
+      void toggleVoice();
       break;
     case 'resume-room':
       void resumeRoom();

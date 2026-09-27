@@ -1,5 +1,7 @@
 /**
- * Local camera only. Video in, video out — no microphone, ever.
+ * Local camera, and the microphone only once somebody asks for it. The lens
+ * opens on its own; the mic never does — `getMicrophoneStream` runs when its
+ * button is pressed and nowhere else.
  */
 
 export type CameraErrorKind = 'unsupported' | 'denied' | 'unavailable' | 'busy' | 'unknown';
@@ -48,14 +50,36 @@ export async function getCameraStream(options: CameraOptions = {}): Promise<Medi
   try {
     return await navigator.mediaDevices.getUserMedia(constraints);
   } catch (err) {
-    const name = (err as { name?: string } | null)?.name ?? '';
-    if (name === 'NotAllowedError' || name === 'SecurityError') throw new CameraError('denied');
-    if (name === 'NotFoundError' || name === 'OverconstrainedError' || name === 'TypeError') {
-      throw new CameraError('unavailable');
-    }
-    if (name === 'NotReadableError' || name === 'AbortError') throw new CameraError('busy');
-    throw new CameraError('unknown');
+    throw cameraErrorFrom(err);
   }
+}
+
+/**
+ * The microphone, for when the two of you want to actually talk. Separate
+ * permission from the camera so the booth can open the lens without ever
+ * asking to listen.
+ */
+export async function getMicrophoneStream(): Promise<MediaStream> {
+  if (!isCameraSupported()) throw new CameraError('unsupported');
+
+  try {
+    return await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      video: false,
+    });
+  } catch (err) {
+    throw cameraErrorFrom(err);
+  }
+}
+
+function cameraErrorFrom(err: unknown): CameraError {
+  const name = (err as { name?: string } | null)?.name ?? '';
+  if (name === 'NotAllowedError' || name === 'SecurityError') return new CameraError('denied');
+  if (name === 'NotFoundError' || name === 'OverconstrainedError' || name === 'TypeError') {
+    return new CameraError('unavailable');
+  }
+  if (name === 'NotReadableError' || name === 'AbortError') return new CameraError('busy');
+  return new CameraError('unknown');
 }
 
 export function stopStream(stream: MediaStream | null | undefined): void {
