@@ -48,7 +48,8 @@ There is no backend in the app itself. Signaling sits behind one interface,
 build/dev time, so set it before starting the server. See `.env.example`.
 
 Both transports only carry room membership and SDP/ICE blobs. Photos travel
-peer-to-peer over WebRTC and never touch a relay.
+peer-to-peer over WebRTC and never touch a relay. ICE candidates leave in small
+batches, so a whole burst is one message instead of one per interface.
 
 > Cameras need a secure context. `localhost` is fine over plain HTTP; for `--host`
 > on a LAN address put it behind HTTPS or a tunnel.
@@ -66,8 +67,9 @@ it costs nothing on a LAN or any network that can connect directly.
 - `GET /ice` on the relay Worker mints short-lived credentials from Cloudflare
   Realtime TURN and returns them as an `iceServers` array. The TURN key and its API
   token are Worker secrets — neither ever reaches the browser.
-- `src/lib/ice.ts` fetches that before the peer connection is created, once per
-  connection attempt, and falls back to STUN if the endpoint is unavailable.
+- `src/lib/ice.ts` fetches that once per connection attempt — racing the room
+  handshake rather than blocking it — remembers a good grant for four minutes so
+  a reload costs no request, and falls back to STUN if the endpoint is unavailable.
 - Cloudflare's free tier covers the first **1,000 GB** of egress per month.
 
 One-time setup:

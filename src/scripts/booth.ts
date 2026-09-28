@@ -837,11 +837,14 @@ async function startCreateRoom() {
   });
 
   try {
-    iceServers = await loadIceServers();
+    // The grant rides along with the room handshake; the peer is not built
+    // until both are in, so nothing downstream can ever see an empty list.
+    const iceReady = loadIceServers();
     const client = createSignalingClient();
     wireSignaling(client);
     signaling = client;
     const code = await client.createRoom();
+    iceServers = await iceReady;
     store.set({
       roomCode: code,
       role: client.role ?? 'host',
@@ -908,11 +911,12 @@ async function submitJoin(codeInput: string) {
     signaling?.close();
     signaling = null;
 
-    iceServers = await loadIceServers();
+    const iceReady = loadIceServers();
     const client = createSignalingClient();
     wireSignaling(client);
     signaling = client;
     await client.joinRoom(code);
+    iceServers = await iceReady;
     store.set({
       roomCode: client.roomCode ?? code,
       role: client.role ?? 'guest',

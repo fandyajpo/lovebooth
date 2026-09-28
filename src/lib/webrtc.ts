@@ -38,6 +38,12 @@ const ICE_SERVERS: RTCIceServer[] = [{ urls: 'stun:stun.l.google.com:19302' }];
 const CHUNK_SIZE = 16 * 1024;
 const BUFFER_HIGH_WATER = 512 * 1024;
 const CLOCK_SYNC_INTERVAL = 10_000;
+/**
+ * Candidates fire one per interface within a few milliseconds of each other;
+ * holding them for one tick turns a burst into a single message. The wait is
+ * a rounding error next to the STUN checks that follow it.
+ */
+const ICE_BATCH_MS = 50;
 
 function isPeerSignal(value: unknown): value is PeerSignal {
   if (typeof value !== 'object' || value === null) return false;
@@ -55,6 +61,8 @@ export class BoothPeer {
   private makingOffer = false;
   private ignoreOffer = false;
   private pendingCandidates: RTCIceCandidateInit[] = [];
+  private outCandidates: RTCIceCandidateInit[] = [];
+  private candidateTimer: ReturnType<typeof setTimeout> | null = null;
   private chain: Promise<unknown> = Promise.resolve();
 
   private localTracks = new Set<RTCRtpSender>();
@@ -102,7 +110,15 @@ export class BoothPeer {
     const pc = this.pc;
 
     pc.onicecandidate = ({ candidate }) => {
-      this.signal({ k: 'ice', candidate: candidate ? candidate.toJSON() : null });
+      if (!candidate) {
+        // Gathering finished — flush the last batch, nothing left to wait for.
+        this.flushOutgoingCandidates();
+        return;
+      }
+      this.outCandidates.push(candidate.toJSON());
+      if (this.candidateTimer === null) {
+        this.candidateTimer = setTimeout(() => this.flushOutgoingCandidates(), ICE_BATCH_MS);
+      }
     };
 
     pc.onconnectionstatechange = () => {
@@ -251,6 +267,17 @@ export class BoothPeer {
     this.onSignalOut?.(payload);
   }
 
+  /** One message per burst of candidates instead of one message per candidate. */
+  private flushOutgoingCandidates() {
+    if (this.candidateTimer !== null) {
+      clearTimeout(this.candidateTimer);
+      this.candidateTimer = null;
+    }
+    const batch = this.outCandidates.splice(0);
+    if (batch.length === 0) return;
+    this.signal({ k: 'ice', candidates: batch });
+  }
+
   private enqueue<T>(fn: () => Promise<T>): Promise<T> {
     const run = this.chain.then(fn, fn);
     this.chain = run.catch(() => undefined);
@@ -292,12 +319,19 @@ export class BoothPeer {
       }
 
       if (data.k === 'ice') {
-        if (!data.candidate) return;
+        const batch = data.candidates ?? (data.candidate ? [data.candidate] : []);
+        if (batch.length === 0) return;
         if (!pc.remoteDescription) {
-          this.pendingCandidates.push(data.candidate);
+          this.pendingCandidates.push(...batch);
           return;
         }
-        await pc.addIceCandidate(data.candidate);
+        for (const candidate of batch) {
+          try {
+            await pc.addIceCandidate(candidate);
+          } catch {
+            /* a candidate may be stale after a rollback — keep the rest */
+          }
+        }
       }
     } catch (err) {
       if (!this.ignoreOffer) console.warn('[booth] signal handling failed', err);
@@ -515,6 +549,11 @@ export class BoothPeer {
 
   close(): void {
     this.stopClockSync();
+    if (this.candidateTimer !== null) {
+      clearTimeout(this.candidateTimer);
+      this.candidateTimer = null;
+    }
+    this.outCandidates.length = 0;
     try {
       this.dc?.close();
     } catch {

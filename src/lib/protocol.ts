@@ -22,7 +22,15 @@ export interface AnswerSignal {
 
 export interface IceSignal {
   k: 'ice';
-  candidate: RTCIceCandidateInit | null;
+  /**
+   * Candidates travel batched — several per message, flushed on a short
+   * debounce — so one burst of interfaces is one relay message instead of a
+   * dozen. Older peers send them one at a time through `candidate`; both
+   * shapes are accepted.
+   */
+  candidates?: RTCIceCandidateInit[];
+  /** Legacy single-candidate form, read-only from here on. */
+  candidate?: RTCIceCandidateInit | null;
 }
 
 export type PeerSignal = OfferSignal | AnswerSignal | IceSignal;
