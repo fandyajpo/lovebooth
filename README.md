@@ -208,10 +208,16 @@ relay/
 
 ## Visual system
 
-Disposable-camera / photobooth-receipt: warm paper `#efe9dd`, ink `#14120e`, an
-action red `#e8380d`, and a caution yellow `#f5b800`. Anton for display, Space Mono
-for labels, Space Grotesk for body. Film grain over everything, scalloped receipt
-edges on the result, and a flash that fires on every capture.
+Disposable-camera / photobooth-receipt. The skin *is* the strip theme: six
+custom properties in `:root` (`--paper`, `--mat`, `--ink`, `--ink-3`, `--accent`,
+`--on-accent`, plus `--grain-blend`) are written by `applySiteSkin()` whenever
+the Style picker moves, and everything else — the two paper steps, the mid ink,
+the dark booth chrome, the hard shadows — is derived from them with
+`color-mix()`. The default is Sakura (blush `#fdf1f4`, plum ink `#3d1f2a`, rose
+`#e0457b`); caution yellow `#f5b800` stays put across themes as the tally light.
+Anton for display, Space Mono for labels, Space Grotesk for body. Film grain
+over everything, scalloped receipt edges on the result, and a flash that fires
+on every capture.
 
 The landing hero drifts with a pile of prints — twelve frames and three strips,
 clipped to the first screen, shuffled into a fresh arrangement on every visit and
@@ -234,9 +240,10 @@ booth bar or on the result screen:
 - **Template** — how the eight photos sit: `grid` (four rows, you and them),
   `film` (edge-to-edge contact sheet with a sprocket rail), or `hero` (the last
   instant large, the first three small).
-- **Theme** — the palette the canvas paints with: `paper` (the house look),
-  `noir`, `pop`, `mint`. The booth UI keeps its warm-paper skin; only the
-  exported strip changes.
+- **Theme** — the palette both the strip and the site paint with: `sakura`
+  (the default, blush and plum), `paper` (the original house look), `noir`,
+  `pop`, `mint`. Picking one re-skins every screen live — landing, booth,
+  result — and the choice persists in `localStorage['pb:style']`.
 
 Both people compose the strip independently, so the choice rides the data
 channel: `BoothMessage`'s `style` variant carries live changes and `hello`
@@ -293,7 +300,7 @@ other*: one walks away with *Take another*, the partner stays on their strip and
 gets the invitation, taking it puts both back on an empty frame 01, and *Back to
 the room* / *Exit* each move only the one who pressed them.
 It also switches the strip style on one device and asserts the other follows,
-then composes all twelve template × theme combinations and checks each renders
+then composes all fifteen template × theme combinations and checks each renders
 1200 × 1800 with its own paper colour.
 
 ```bash
@@ -308,6 +315,11 @@ localhost the app uses its BroadcastChannel transport instead, which the script
 detects and skips those assertions for. Use your own LAN address — DHCP hands a
 new one out often enough that the example above will go stale; check it with
 `ipconfig getifaddr en0`.
+
+## Support
+
+Booth runs on favors and film. If it gave you a good afternoon, you can leave
+the dev a tip at [saweria.co/fandy11](https://saweria.co/fandy11).
 
 ## Copyright
 

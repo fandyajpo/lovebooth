@@ -6,7 +6,7 @@
  */
 
 export type TemplateId = 'grid' | 'film' | 'hero';
-export type ThemeId = 'paper' | 'noir' | 'pop' | 'mint';
+export type ThemeId = 'paper' | 'noir' | 'pop' | 'mint' | 'sakura';
 
 export interface StripStyle {
   template: TemplateId;
@@ -99,9 +99,43 @@ export const THEMES: readonly ThemePalette[] = [
     swatch: ['#e7f4ee', '#ff5a3c'],
     grain: 'multiply',
   },
+  {
+    id: 'sakura',
+    label: 'Sakura',
+    paper: '#fdf1f4',
+    mat: '#fffafb',
+    ink: '#3d1f2a',
+    inkSoft: '#96707c',
+    accent: '#e0457b',
+    onAccent: '#fffafb',
+    placeholder: '#f6dbe2',
+    swatch: ['#fdf1f4', '#e0457b'],
+    grain: 'multiply',
+  },
 ];
 
-export const DEFAULT_STYLE: StripStyle = { template: 'grid', theme: 'paper' };
+export const DEFAULT_STYLE: StripStyle = { template: 'grid', theme: 'sakura' };
+
+/**
+ * Paint the whole app from one theme. The strip picker is the site's theme
+ * picker: these six custom properties feed every derived token in the
+ * stylesheet (`--paper-2`, `--ink-2`, `--booth`, the hard shadows, the grain
+ * blend), so setting them re-skins all five screens at once.
+ */
+export function applySiteSkin(id: ThemeId): void {
+  if (typeof document === 'undefined') return;
+  const theme = getTheme(id);
+  const root = document.documentElement;
+  root.style.setProperty('--paper', theme.paper);
+  root.style.setProperty('--mat', theme.mat);
+  root.style.setProperty('--ink', theme.ink);
+  root.style.setProperty('--ink-3', theme.inkSoft);
+  root.style.setProperty('--accent', theme.accent);
+  root.style.setProperty('--on-accent', theme.onAccent);
+  root.style.setProperty('--grain-blend', theme.grain);
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', theme.paper);
+}
 
 const STYLE_KEY = 'pb:style';
 

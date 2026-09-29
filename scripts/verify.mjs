@@ -142,7 +142,7 @@ async function protocol() {
  * and far more than one colour on the page (a flat fill means a dead render).
  */
 async function styles() {
-  section(`style · ${ORIGIN} · 3 templates × 4 themes`);
+  section(`style · ${ORIGIN} · 3 templates × 5 themes`);
   const puppeteer = (await import('puppeteer-core')).default;
   const browser = await puppeteer.launch({
     executablePath: CHROME,
@@ -181,7 +181,7 @@ async function styles() {
       const them = ['#ff5533', '#33bbdd', '#8855ee', '#55aa22'].map(swatch);
       const out = [];
       for (const template of ['grid', 'film', 'hero']) {
-        for (const theme of ['paper', 'noir', 'pop', 'mint']) {
+        for (const theme of ['paper', 'noir', 'pop', 'mint', 'sakura']) {
           const canvas = await mod.composePhotostrip({
             frames: { you, them },
             roomCode: 'TEST',
@@ -232,7 +232,7 @@ async function styles() {
 
     if (rows.length) {
       const corners = new Set(rows.map((r) => r.corner));
-      check(rows.length === 12, `all 12 combinations composed (${rows.length})`);
+      check(rows.length === 15, `all 15 combinations composed (${rows.length})`);
       check(
         rows.every((r) => r.w === 1200 && r.h === 1800),
         'every strip is 1200 × 1800',
@@ -241,7 +241,7 @@ async function styles() {
         rows.every((r) => r.distinct > 20),
         `every strip paints a real image (min distinct colours ${Math.min(...rows.map((r) => r.distinct))})`,
       );
-      check(corners.size === 4, `each theme paints its own paper (${corners.size} distinct sheets)`);
+      check(corners.size === 5, `each theme paints its own paper (${corners.size} distinct sheets)`);
       check(
         rows.every((r) => r.titleGap > 20),
         `the headline stays legible in every theme (min contrast ${Math.min(...rows.map((r) => r.titleGap)).toFixed(0)})`,
@@ -249,6 +249,17 @@ async function styles() {
     } else {
       console.log('  skip  compose sweep (this origin serves no /src transform)');
     }
+
+    const rootSkin = () =>
+      page.evaluate(() => ({
+        paper: getComputedStyle(document.documentElement).getPropertyValue('--paper').trim(),
+        accent: getComputedStyle(document.documentElement).getPropertyValue('--accent').trim(),
+      }));
+    const bootSkin = await rootSkin();
+    check(
+      bootSkin.paper === '#fdf1f4' && bootSkin.accent === '#e0457b',
+      `boots in the default Sakura skin (${bootSkin.paper})`,
+    );
 
     // The picker is on every screen, so it works from the landing page too.
     await click(page, '#style-btn');
@@ -262,6 +273,11 @@ async function styles() {
       saved: localStorage.getItem('pb:style'),
     }));
     check(picked.template === 'film' && picked.theme === 'mint', 'chips move to the new choice');
+    const mintSkin = await rootSkin();
+    check(
+      mintSkin.paper === '#e7f4ee' && mintSkin.accent === '#ff5a3c',
+      `the site skin follows the strip theme (${mintSkin.paper})`,
+    );
     check(/"template":"film"/.test(picked.saved ?? ''), 'the choice is saved locally');
 
     await page.keyboard.press('Escape');
@@ -275,6 +291,8 @@ async function styles() {
       theme: document.querySelector('[aria-checked="true"][data-theme]')?.dataset.theme,
     }));
     check(after.template === 'film' && after.theme === 'mint', 'the choice survives a reload');
+    const reloadedSkin = await rootSkin();
+    check(reloadedSkin.paper === '#e7f4ee', 'the skin survives a reload');
   } finally {
     await browser.close();
   }
@@ -568,6 +586,7 @@ async function session() {
         template: document.querySelector('[aria-checked="true"][data-template]')?.dataset.template,
         theme: document.querySelector('[aria-checked="true"][data-theme]')?.dataset.theme,
         panel: !document.querySelector('#style-panel')?.hidden,
+        paper: getComputedStyle(document.documentElement).getPropertyValue('--paper').trim(),
       }));
 
     await click(host, '#style-btn');
@@ -575,6 +594,7 @@ async function session() {
     await pickStyle(host, 'hero', 'noir');
     const hostStyle = await styleSeen(host);
     check(hostStyle.template === 'hero' && hostStyle.theme === 'noir', 'host chips report the pick');
+    check(hostStyle.paper === '#12110f', `the host re-skins to noir (${hostStyle.paper})`);
 
     const guestStyle = await guest
       .waitForFunction(
@@ -588,10 +608,11 @@ async function session() {
       .then(() => styleSeen(guest))
       .catch(() => null);
     check(!!guestStyle, 'guest adopts the host template and theme');
+    check(guestStyle?.paper === '#12110f', 'the partner re-skins from the message too');
     check(guestStyle?.panel === false, 'the choice does not force the panel open on the partner');
 
     await pickStyle(host, 'grid', 'paper');
-    const backToDefault = await guest
+    const backToPaper = await guest
       .waitForFunction(
         () =>
           document.querySelector('[aria-checked="true"][data-template]')?.dataset.template === 'grid' &&
@@ -602,7 +623,7 @@ async function session() {
       )
       .then(() => true)
       .catch(() => false);
-    check(backToDefault, 'style changes travel both ways');
+    check(backToPaper, 'style changes travel both ways');
     await click(host, '#style-btn');
     check((await styleSeen(host)).panel === false, 'the panel closes again');
 

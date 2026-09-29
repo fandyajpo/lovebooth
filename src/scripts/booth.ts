@@ -40,6 +40,7 @@ import { formatRoomCode, isValidRoomCode, normalizeRoomCode } from '../lib/room'
 // Decorates the landing hero — it finds its own container and no-ops without one.
 import './flying';
 import {
+  applySiteSkin,
   getTemplate,
   getTheme,
   isTemplateId,
@@ -1976,6 +1977,7 @@ function applyStyle(patch: Partial<StripStyle>, sync = true) {
 
   store.set({ template, theme });
   saveStyle({ template, theme });
+  applySiteSkin(theme);
   if (sync) peer?.send({ t: 'style', template, theme });
   restyleStrip();
 }
@@ -2462,6 +2464,9 @@ function renderJoinHint() {
 
 function boot() {
   if (typeof window === 'undefined') return;
+
+  // The saved strip theme is also the site skin — paint it before anything else.
+  applySiteSkin(store.get().theme);
 
   if (!('RTCPeerConnection' in window) || !isCameraSupported()) {
     store.subscribe(render);
