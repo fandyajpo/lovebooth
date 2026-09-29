@@ -5,7 +5,7 @@
  * `style` variant — and is persisted locally between visits.
  */
 
-export type TemplateId = 'grid' | 'film' | 'hero';
+export type TemplateId = 'grid' | 'film' | 'hero' | 'split';
 export type ThemeId = 'paper' | 'noir' | 'pop' | 'mint' | 'sakura';
 
 export interface StripStyle {
@@ -44,6 +44,7 @@ export const TEMPLATES: readonly TemplateInfo[] = [
   { id: 'grid', label: 'Classic', blurb: 'Four rows · you and them' },
   { id: 'film', label: 'Contact', blurb: 'Edge to edge · sprocket rail' },
   { id: 'hero', label: 'Hero', blurb: 'Last shot big · three small' },
+  { id: 'split', label: 'Split', blurb: 'Half each · hold them side by side' },
 ];
 
 export const THEMES: readonly ThemePalette[] = [

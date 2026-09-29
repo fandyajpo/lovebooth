@@ -471,7 +471,9 @@ function render(state: AppState) {
   const chosenTheme = getTheme(state.theme);
   setText(
     el.styleNote,
-    `${chosenTemplate.label} · ${chosenTheme.label} — both of you see the same strip.`,
+    state.template === 'split'
+      ? `${chosenTemplate.label} · ${chosenTheme.label} — hold your strips side by side.`
+      : `${chosenTemplate.label} · ${chosenTheme.label} — both of you see the same strip.`,
   );
 }
 
@@ -1920,7 +1922,8 @@ async function paintStrip(reveal: boolean): Promise<void> {
     roomCode: state.roomCode,
     dateLabel: formatStripDate(),
     title: 'PHOTOBOOTH',
-    tagline: 'MAKE A MEMORY',
+    // split: your own column of photos sits against the seam edge you share
+    half: currentRole() === 'guest' ? 'right' : 'left',
     style: { template: state.template, theme: state.theme },
   });
   const blob = await new Promise<Blob>((resolve, reject) =>

@@ -4,7 +4,8 @@
  * rebuild the exact same strip from the frames they already hold.
  *
  * Two knobs change the result: a template (where the photos sit) and a theme
- * (which palette paints them). See `src/lib/style.ts`.
+ * (which palette paints them). `split` adds a third decision — which half of
+ * the seam your sheet keeps — see `StripConfig.half`. See `src/lib/style.ts`.
  */
 
 import { getTheme, type StripStyle, type ThemePalette, type TemplateId } from './style';
@@ -39,6 +40,12 @@ export interface StripConfig {
   width?: number;
   height?: number;
   style?: Partial<StripStyle>;
+  /**
+   * Which side of the seam this person's sheet keeps — only `split` reads it.
+   * The host keeps the left half, the guest the right, so the two sheets line
+   * up when they are held next to each other.
+   */
+  half?: 'left' | 'right';
 }
 
 /** One drawn photo. Coordinates are in 1200 × 1800 space. */
@@ -50,10 +57,16 @@ interface Cell {
   src: 'you' | 'them';
   label: string;
   frameNo: number;
-  /** Mount board thickness around the photo; `film` uses 0. */
+  /** Mount board thickness around the photo; `film` and `split` use 0. */
   mat: number;
   /** Thin outer stroke on the cell. */
   stroke?: boolean;
+  /**
+   * The photo runs off this edge of the sheet — `split`'s seam. The opposite
+   * edge keeps its stroke, the seam edge is left open so the two halves meet
+   * with no paper between them.
+   */
+  bleed?: 'left' | 'right';
 }
 
 interface TemplateGeometry {
@@ -66,6 +79,7 @@ const GEOMETRY: Record<TemplateId, TemplateGeometry> = {
   grid: { header: 136, titleSize: 76, sprockets: false },
   film: { header: 92, titleSize: 44, sprockets: true },
   hero: { header: 136, titleSize: 76, sprockets: false },
+  split: { header: 136, titleSize: 76, sprockets: false },
 };
 
 const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
@@ -273,9 +287,39 @@ function planHero(count: number): Cell[] {
   return cells;
 }
 
-function planLayout(template: TemplateId, count: number): Cell[] {
+/**
+ * One column of your own photos, flush against the seam edge, with the rest
+ * of the sheet given over to notes. Left sheets bleed right, right sheets
+ * bleed left, so a pair of sheets stitches back into a classic row.
+ */
+function planSplit(count: number, half: 'left' | 'right'): Cell[] {
+  const geo = GEOMETRY.split;
+  const cellW = (STRIP_WIDTH - PAD * 2 - GAP) / 2;
+  const rowsAvail = STRIP_HEIGHT - PAD * 2 - geo.header - FOOTER;
+  const cellH = (rowsAvail - GAP * (ROWS - 1)) / ROWS;
+  const top = PAD + geo.header;
+  const seamLeft = half === 'right';
+  const cells: Cell[] = [];
+  for (let row = 0; row < count; row += 1) {
+    cells.push({
+      x: seamLeft ? 0 : STRIP_WIDTH - cellW,
+      y: top + row * (cellH + GAP),
+      w: cellW,
+      h: cellH,
+      src: 'you',
+      label: 'YOURS',
+      frameNo: row + 1,
+      mat: 0,
+      bleed: seamLeft ? 'left' : 'right',
+    });
+  }
+  return cells;
+}
+
+function planLayout(template: TemplateId, count: number, half: 'left' | 'right'): Cell[] {
   if (template === 'film') return planFilm(count);
   if (template === 'hero') return planHero(count);
+  if (template === 'split') return planSplit(count, half);
   return planGrid(count);
 }
 
@@ -317,15 +361,39 @@ function drawCell(
   if (cell.stroke !== false) {
     ctx.strokeStyle = withAlpha(palette.ink, 0.55);
     ctx.lineWidth = 1;
-    ctx.strokeRect(ix + 0.5, iy + 0.5, iw - 1, ih - 1);
+    if (cell.bleed) {
+      // Three sides only: the seam edge stays open so the partner's half can
+      // butt straight up against it. `closed` is the vertical we do draw.
+      const closed = cell.bleed === 'left' ? ix + iw - 0.5 : ix + 0.5;
+      ctx.beginPath();
+      ctx.moveTo(ix + 0.5, iy + 0.5);
+      ctx.lineTo(ix + iw - 0.5, iy + 0.5);
+      ctx.moveTo(closed, iy + 0.5);
+      ctx.lineTo(closed, iy + ih - 0.5);
+      ctx.moveTo(ix + 0.5, iy + ih - 0.5);
+      ctx.lineTo(ix + iw - 0.5, iy + ih - 0.5);
+      ctx.stroke();
+    } else {
+      ctx.strokeRect(ix + 0.5, iy + 0.5, iw - 1, ih - 1);
+    }
   }
 
-  // label chip
+  // label chip + frame number. A split sheet keeps both on its outer side —
+  // the seam edge must stay pure image, or the two halves butt into chrome.
   ctx.font = '700 16px "Space Mono", ui-monospace, monospace';
   const padX = 10;
   const chipH = 30;
   const labelW = ctx.measureText(cell.label).width + padX * 2;
-  const chipX = ix + 12;
+  const num = String(cell.frameNo).padStart(2, '0');
+  const numW = ctx.measureText(num).width + padX * 2;
+  let chipX = ix + 12;
+  let numX = ix + iw - numW - 12;
+  if (cell.bleed === 'left') {
+    chipX = ix + iw - labelW - 12;
+    numX = chipX - numW - 8;
+  } else if (cell.bleed === 'right') {
+    numX = chipX + labelW + 8;
+  }
   const chipY = iy + ih - chipH - 12;
   ctx.fillStyle = withAlpha(palette.ink, 0.88);
   ctx.fillRect(chipX, chipY, labelW, chipH);
@@ -334,10 +402,6 @@ function drawCell(
   ctx.textBaseline = 'middle';
   ctx.fillText(cell.label, chipX + padX, chipY + chipH / 2 + 1);
 
-  // frame number
-  const num = String(cell.frameNo).padStart(2, '0');
-  const numW = ctx.measureText(num).width + padX * 2;
-  const numX = ix + iw - numW - 12;
   ctx.fillStyle = palette.accent;
   ctx.fillRect(numX, chipY, numW, chipH);
   ctx.fillStyle = palette.onAccent;
@@ -373,6 +437,55 @@ function drawSprockets(
 
 /* --------------------------------------------------------------- compose -- */
 
+/**
+ * The outer column of a split sheet: the frame number, whose half it is, and
+ * a rule of the game. The photo column takes the other side of the page.
+ */
+function drawSplitNotes(
+  ctx: CanvasRenderingContext2D,
+  half: 'left' | 'right',
+  count: number,
+  palette: ThemePalette,
+): void {
+  const geo = GEOMETRY.split;
+  const cellW = (STRIP_WIDTH - PAD * 2 - GAP) / 2;
+  const rowsAvail = STRIP_HEIGHT - PAD * 2 - geo.header - FOOTER;
+  const cellH = (rowsAvail - GAP * (ROWS - 1)) / ROWS;
+  const top = PAD + geo.header;
+  const seamLeft = half === 'right';
+  const x = seamLeft ? STRIP_WIDTH - PAD : PAD;
+  const colStart = seamLeft ? cellW + GAP : PAD;
+  const colEnd = seamLeft ? STRIP_WIDTH - PAD : STRIP_WIDTH - cellW - GAP;
+  const align = seamLeft ? 'right' : 'left';
+
+  for (let row = 0; row < count; row += 1) {
+    const y0 = top + row * (cellH + GAP);
+
+    ctx.fillStyle = palette.accent;
+    ctx.font = '104px "Anton", "Arial Black", sans-serif';
+    drawTrackedText(ctx, String(row + 1).padStart(2, '0'), x, y0 + 116, 3, align);
+
+    ctx.fillStyle = palette.ink;
+    ctx.font = '20px "Space Mono", ui-monospace, monospace';
+    drawTrackedText(ctx, 'YOUR HALF', x, y0 + 164, 5, align);
+
+    ctx.fillStyle = palette.inkSoft;
+    ctx.font = '17px "Space Mono", ui-monospace, monospace';
+    drawTrackedText(ctx, 'THEIR STRIP HOLDS THE REST', x, y0 + 200, 1, align);
+
+    if (row < count - 1) {
+      ctx.strokeStyle = withAlpha(palette.ink, 0.3);
+      ctx.lineWidth = 1;
+      ctx.setLineDash([6, 6]);
+      ctx.beginPath();
+      ctx.moveTo(colStart + 0.5, y0 + cellH + GAP / 2);
+      ctx.lineTo(colEnd - 0.5, y0 + cellH + GAP / 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
+}
+
 export async function composePhotostrip(config: StripConfig): Promise<HTMLCanvasElement> {
   const width = config.width ?? STRIP_WIDTH;
   const height = config.height ?? STRIP_HEIGHT;
@@ -392,15 +505,33 @@ export async function composePhotostrip(config: StripConfig): Promise<HTMLCanvas
 
   const scaleX = width / STRIP_WIDTH;
   const scaleY = height / STRIP_HEIGHT;
+  const half: 'left' | 'right' = config.half === 'right' ? 'right' : 'left';
 
   ctx.fillStyle = palette.paper;
   ctx.fillRect(0, 0, width, height);
 
-  // outer frame
+  // outer frame — split opens it on the seam so two sheets can meet flush
   ctx.strokeStyle = palette.ink;
   ctx.lineWidth = BORDER * scaleX;
   const inset = 28 * scaleX;
-  ctx.strokeRect(inset, inset, width - inset * 2, height - inset * 2);
+  if (style.template === 'split') {
+    const openRight = half === 'left';
+    ctx.beginPath();
+    if (openRight) {
+      ctx.moveTo(width - inset, inset);
+      ctx.lineTo(inset, inset);
+      ctx.lineTo(inset, height - inset);
+      ctx.lineTo(width - inset, height - inset);
+    } else {
+      ctx.moveTo(inset, inset);
+      ctx.lineTo(width - inset, inset);
+      ctx.lineTo(width - inset, height - inset);
+      ctx.lineTo(inset, height - inset);
+    }
+    ctx.stroke();
+  } else {
+    ctx.strokeRect(inset, inset, width - inset * 2, height - inset * 2);
+  }
 
   // header
   ctx.fillStyle = palette.inkSoft;
@@ -424,7 +555,7 @@ export async function composePhotostrip(config: StripConfig): Promise<HTMLCanvas
   );
   const gridTop = PAD + geo.header;
   const rowsAvail = STRIP_HEIGHT - PAD * 2 - geo.header - FOOTER;
-  const cells = planLayout(style.template, count);
+  const cells = planLayout(style.template, count, half);
 
   for (const cell of cells) {
     const sources = cell.src === 'you' ? config.frames.you : config.frames.them;
@@ -438,6 +569,23 @@ export async function composePhotostrip(config: StripConfig): Promise<HTMLCanvas
       }
     }
     drawCell(ctx, image, cell, palette);
+  }
+
+  if (style.template === 'split') {
+    drawSplitNotes(ctx, half, count, palette);
+
+    // a cut line down the seam — the photos interrupt it, paper catches it
+    const seamX = (half === 'left' ? STRIP_WIDTH - 4 : 4) * scaleX;
+    ctx.strokeStyle = withAlpha(palette.ink, 0.5);
+    ctx.lineWidth = 2 * scaleX;
+    ctx.setLineDash([10 * scaleX, 12 * scaleX]);
+    ctx.beginPath();
+    ctx.moveTo(seamX, inset);
+    ctx.lineTo(seamX, gridTop * scaleY);
+    ctx.moveTo(seamX, (gridTop + rowsAvail) * scaleY);
+    ctx.lineTo(seamX, height - inset);
+    ctx.stroke();
+    ctx.setLineDash([]);
   }
 
   if (geo.sprockets) {
@@ -467,7 +615,14 @@ export async function composePhotostrip(config: StripConfig): Promise<HTMLCanvas
 
   ctx.fillStyle = palette.accent;
   ctx.font = `${40 * scaleY}px "Anton", "Arial Black", sans-serif`;
-  drawTrackedText(ctx, config.tagline ?? 'MAKE A MEMORY', width / 2, (footerTop + 112) * scaleY, 2 * scaleX);
+  const defaultTagline = style.template === 'split' ? 'HALF A MEMORY' : 'MAKE A MEMORY';
+  drawTrackedText(
+    ctx,
+    config.tagline ?? defaultTagline,
+    width / 2,
+    (footerTop + 112) * scaleY,
+    2 * scaleX,
+  );
 
   // paper grain
   const noise = getNoise();

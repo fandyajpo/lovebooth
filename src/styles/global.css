@@ -2470,6 +2470,10 @@ canvas {
   bottom: clamp(12px, 3vh, 28px);
   transform: translateX(-50%);
   width: min(470px, calc(100vw - 24px));
+  /* four template chips now stack two rows — never let the panel outgrow
+     a short screen */
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -2522,7 +2526,7 @@ canvas {
 
 .stylepanel__row {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
 

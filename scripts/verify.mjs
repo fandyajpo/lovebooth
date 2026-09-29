@@ -142,7 +142,7 @@ async function protocol() {
  * and far more than one colour on the page (a flat fill means a dead render).
  */
 async function styles() {
-  section(`style · ${ORIGIN} · 3 templates × 5 themes`);
+  section(`style · ${ORIGIN} · 4 templates × 5 themes`);
   const puppeteer = (await import('puppeteer-core')).default;
   const browser = await puppeteer.launch({
     executablePath: CHROME,
@@ -180,7 +180,7 @@ async function styles() {
       const you = ['#3366ff', '#33aa66', '#aa33cc', '#cc8800'].map(swatch);
       const them = ['#ff5533', '#33bbdd', '#8855ee', '#55aa22'].map(swatch);
       const out = [];
-      for (const template of ['grid', 'film', 'hero']) {
+      for (const template of ['grid', 'film', 'hero', 'split']) {
         for (const theme of ['paper', 'noir', 'pop', 'mint', 'sakura']) {
           const canvas = await mod.composePhotostrip({
             frames: { you, them },
@@ -226,13 +226,35 @@ async function styles() {
           });
         }
       }
-      return out;
+      // Split ships two sheets, not one: compose both halves and confirm they
+      // hold different columns — left sheet bleeds your frames off its right
+      // edge, right sheet bleeds theirs off its left, samples taken inside
+      // row 0 (y 192…542) where the photos live.
+      const at = (c, x, y) => [...c.getImageData(x, y, 1, 1).data].slice(0, 3).join(',');
+      const compose = (half) =>
+        mod.composePhotostrip({
+          frames: { you, them },
+          roomCode: 'TEST',
+          dateLabel: '01 JAN 2026',
+          style: { template: 'split', theme: 'paper' },
+          half,
+        });
+      const leftC = (await compose('left')).getContext('2d', { willReadFrequently: true });
+      const rightC = (await compose('right')).getContext('2d', { willReadFrequently: true });
+      const halves = {
+        leftPhoto: at(leftC, 1150, 400),
+        leftPaper: at(leftC, 50, 400),
+        rightPhoto: at(rightC, 50, 400),
+        rightPaper: at(rightC, 1150, 400),
+      };
+      return { rows: out, halves };
     });
-    const rows = swept ?? [];
+    const rows = swept?.rows ?? [];
+    const halves = swept?.halves ?? null;
 
     if (rows.length) {
       const corners = new Set(rows.map((r) => r.corner));
-      check(rows.length === 15, `all 15 combinations composed (${rows.length})`);
+      check(rows.length === 20, `all 20 combinations composed (${rows.length})`);
       check(
         rows.every((r) => r.w === 1200 && r.h === 1800),
         'every strip is 1200 × 1800',
@@ -246,6 +268,19 @@ async function styles() {
         rows.every((r) => r.titleGap > 20),
         `the headline stays legible in every theme (min contrast ${Math.min(...rows.map((r) => r.titleGap)).toFixed(0)})`,
       );
+      if (halves) {
+        const [lr, , lb] = halves.leftPhoto.split(',').map(Number);
+        const [rr, rg] = halves.rightPhoto.split(',').map(Number);
+        check(
+          halves.leftPhoto !== halves.rightPhoto &&
+            halves.leftPaper !== halves.rightPaper,
+          'split keeps a different column on each sheet',
+        );
+        check(lb > lr + 60, `the left sheet bleeds your frames off its right edge (${halves.leftPhoto})`);
+        check(rr > 180 && rg < 80, `the right sheet bleeds theirs off its left edge (${halves.rightPhoto})`);
+      } else {
+        check(false, 'split composes both halves');
+      }
     } else {
       console.log('  skip  compose sweep (this origin serves no /src transform)');
     }

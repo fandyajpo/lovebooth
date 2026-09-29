@@ -238,8 +238,10 @@ The strip has two independent knobs, both picked from the *Style* panel in the
 booth bar or on the result screen:
 
 - **Template** — how the eight photos sit: `grid` (four rows, you and them),
-  `film` (edge-to-edge contact sheet with a sprocket rail), or `hero` (the last
-  instant large, the first three small).
+  `film` (edge-to-edge contact sheet with a sprocket rail), `hero` (the last
+  instant large, the first three small), or `split` (each sheet keeps only its
+  own half of every row, bleeding flush against the seam — the two strips only
+  add up to a full picture when held side by side).
 - **Theme** — the palette both the strip and the site paint with: `sakura`
   (the default, blush and plum), `paper` (the original house look), `noir`,
   `pop`, `mint`. Picking one re-skins every screen live — landing, booth,
@@ -250,6 +252,9 @@ channel: `BoothMessage`'s `style` variant carries live changes and `hello`
 carries the current one so a late or returning peer adopts it. The host wins on
 handshake; after that it is last-write-wins. The pick is saved to
 `localStorage['pb:style']` and re-rendered live while the result is on screen.
+`split` is the one template the two of them *don't* see alike: the role picks
+the half (host keeps the left column, guest the right), which needs no
+messaging — each side only ever composes its own sheet.
 
 ## Offline
 
@@ -300,8 +305,9 @@ other*: one walks away with *Take another*, the partner stays on their strip and
 gets the invitation, taking it puts both back on an empty frame 01, and *Back to
 the room* / *Exit* each move only the one who pressed them.
 It also switches the strip style on one device and asserts the other follows,
-then composes all fifteen template × theme combinations and checks each renders
-1200 × 1800 with its own paper colour.
+then composes all twenty template × theme combinations and checks each renders
+1200 × 1800 with its own paper colour, and that `split`'s two halves keep a
+different column each.
 
 ```bash
 npm run verify:protocol                          # relay only, ~5s, no browser
