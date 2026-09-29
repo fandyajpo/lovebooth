@@ -28,9 +28,17 @@
  *   npx wrangler deploy              # production
  *   npx wrangler secret put TURN_KEY_ID
  *   npx wrangler secret put TURN_API_TOKEN
+ *
+ * The Worker is not an open pipe: a browser request must come from an origin
+ * we recognise (the booth, a private dev host, or ALLOWED_ORIGINS), and a
+ * socket can only signal inside the room it joined. See "origins" below.
  */
 
 const MAX_MEMBERS = 2;
+/** Codes the booth actually makes — `src/lib/room.ts` shapes, never prose. */
+const ROOM_PATTERN = /^[0-9A-Z]{4,16}$/;
+/** SDP and ICE are a few KB; nothing legitimate comes close to this. */
+const MAX_MESSAGE_CHARS = 64 * 1024;
 
 /* ----------------------------------------------------------------- ice ---- */
 /**
@@ -55,20 +63,71 @@ const STUN_FALLBACK = [{ urls: 'stun:stun.l.google.com:19302' }];
 
 let iceCache = null;
 
-const CORS = {
-  'access-control-allow-origin': '*',
-  'access-control-allow-methods': 'GET, OPTIONS',
-  'access-control-allow-headers': 'content-type',
-  'access-control-max-age': '86400',
-};
+/* ------------------------------------------------------------- origins ---- */
+/**
+ * Who may knock on this relay.
+ *
+ * Browsers always announce an `Origin` on a WebSocket upgrade and on any
+ * cross-origin fetch, so an origin we do not recognise is somebody else's
+ * page at the door: a site trying to read `/ice` for free TURN credentials,
+ * or a socket trying to drive rooms it was never invited to. Those are
+ * refused outright.
+ *
+ * A request with no Origin is not a browser — browsers never omit it on the
+ * paths that matter — and a script can forge the header as cheaply as it can
+ * send none, so it is let through and judged by the room rules instead. This
+ * is a drive-by guard, not authentication.
+ */
+const BOOTH_ORIGINS = new Set(['https://lovebooth-phi.vercel.app']);
+/** Raw deployments, e.g. lovebooth-gbtv972rg-fandys-projects-….vercel.app. */
+const DEPLOY_ORIGIN = /^https:\/\/lovebooth-[a-z0-9]+-fandys-projects-88486d38\.vercel\.app$/;
+/** Loopback and RFC 1918 — where `npm run dev` and a phone on the same Wi-Fi live. */
+function isPrivateHost(hostname) {
+  const h = hostname.toLowerCase();
+  if (h === 'localhost' || h === '::1' || h === '[::1]') return true;
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(h);
+  if (!m) return false;
+  const a = Number(m[1]);
+  const b = Number(m[2]);
+  return a <= 255 && b <= 255 &&
+    (a === 10 || a === 127 || (a === 192 && b === 168) || (a === 172 && b >= 16 && b <= 31));
+}
 
-function jsonResponse(payload) {
+function originAllowed(originHeader, env) {
+  if (!originHeader) return true;
+  let origin;
+  try {
+    origin = new URL(originHeader);
+  } catch {
+    return false;
+  }
+  if (origin.protocol !== 'http:' && origin.protocol !== 'https:') return false;
+  const normalized = origin.origin;
+  if (BOOTH_ORIGINS.has(normalized) || DEPLOY_ORIGIN.test(normalized)) return true;
+  if (isPrivateHost(origin.hostname)) return true;
+  return String(env?.ALLOWED_ORIGINS ?? '')
+    .split(',')
+    .some((raw) => raw.trim() === normalized);
+}
+
+function corsHeaders(originHeader, env) {
+  if (!originHeader || !originAllowed(originHeader, env)) return {};
+  return {
+    'access-control-allow-origin': originHeader,
+    vary: 'Origin',
+    'access-control-allow-methods': 'GET, OPTIONS',
+    'access-control-allow-headers': 'content-type',
+    'access-control-max-age': '86400',
+  };
+}
+
+function jsonResponse(payload, cors) {
   return new Response(JSON.stringify(payload), {
     status: 200,
     headers: {
       'content-type': 'application/json; charset=utf-8',
       'cache-control': 'no-store',
-      ...CORS,
+      ...cors,
     },
   });
 }
@@ -113,14 +172,19 @@ async function mintIceServers(env) {
   return servers;
 }
 
-async function handleIce(env) {
+async function handleIce(request, env) {
+  const origin = request.headers.get('origin');
+  if (origin && !originAllowed(origin, env)) {
+    return new Response('forbidden', { status: 403 });
+  }
+  const cors = corsHeaders(origin, env);
   try {
     const servers = await mintIceServers(env);
-    if (servers) return jsonResponse({ iceServers: servers, source: 'cloudflare-turn' });
+    if (servers) return jsonResponse({ iceServers: servers, source: 'cloudflare-turn' }, cors);
   } catch {
     /* fall through to STUN — a broken TURN must never take the booth down */
   }
-  return jsonResponse({ iceServers: STUN_FALLBACK, source: 'stun' });
+  return jsonResponse({ iceServers: STUN_FALLBACK, source: 'stun' }, cors);
 }
 
 export class BoothHub {
@@ -230,6 +294,7 @@ export class BoothHub {
     let msg;
     try {
       const text = typeof raw === 'string' ? raw : new TextDecoder().decode(raw);
+      if (text.length > MAX_MESSAGE_CHARS) return;
       msg = JSON.parse(text);
     } catch {
       return;
@@ -243,17 +308,31 @@ export class BoothHub {
       return;
     }
 
+    const room = String(msg.room ?? '');
     switch (msg.t) {
       case 'create':
-        this.createRoom(ws, meta, String(msg.room || ''));
+        if (!ROOM_PATTERN.test(room)) {
+          this.send(ws, { t: 'error', code: 'bad-code' });
+          return;
+        }
+        this.createRoom(ws, meta, room);
         return;
       case 'join':
-        this.joinRoom(ws, meta, String(msg.room || ''));
+        if (!ROOM_PATTERN.test(room)) {
+          this.send(ws, { t: 'error', code: 'bad-code' });
+          return;
+        }
+        this.joinRoom(ws, meta, room);
         return;
       case 'signal': {
-        const room = meta.room || String(msg.room || '');
-        if (!room) return;
-        for (const member of this.membersOf(room)) {
+        // Membership is the authority. A socket may only signal inside the
+        // room it actually joined, and any room it *claims* must be that one —
+        // the old `meta.room || msg.room` fallback let a stranger who guessed
+        // a code push SDP into a live handshake without ever joining.
+        const joined = meta.room;
+        if (!joined) return;
+        if (msg.room !== undefined && msg.room !== null && room !== joined) return;
+        for (const member of this.membersOf(joined)) {
           if (member.meta.selfId === meta.selfId) continue;
           this.send(member.ws, { t: 'signal', from: meta.selfId, data: msg.data });
         }
@@ -278,13 +357,18 @@ export class BoothHub {
 
 export default {
   async fetch(request, env) {
+    const origin = request.headers.get('origin');
+    if (origin && !originAllowed(origin, env)) {
+      return new Response('forbidden', { status: 403 });
+    }
+    const cors = corsHeaders(origin, env);
     const upgrade = request.headers.get('Upgrade');
     if (!upgrade || upgrade.toLowerCase() !== 'websocket') {
       const { pathname } = new URL(request.url);
       if (request.method === 'OPTIONS') {
-        return new Response(null, { status: 204, headers: CORS });
+        return new Response(null, { status: 204, headers: cors });
       }
-      if (pathname === '/ice') return handleIce(env);
+      if (pathname === '/ice') return handleIce(request, env);
       return new Response('lovebooth signaling relay\n', {
         status: 200,
         headers: { 'content-type': 'text/plain; charset=utf-8' },

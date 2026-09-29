@@ -80,10 +80,18 @@ async function protocol() {
   const root = await http('/');
   check(root.status === 200, 'GET / → 200');
 
-  const ice = await http('/ice');
+  const BOOTH_ORIGIN = 'https://lovebooth-phi.vercel.app';
+  const ice = await http('/ice', { headers: { origin: BOOTH_ORIGIN } });
   const body = await ice.json().catch(() => null);
   check(ice.status === 200, 'GET /ice → 200');
-  check(ice.headers.get('access-control-allow-origin') === '*', '/ice sets CORS');
+  check(
+    ice.headers.get('access-control-allow-origin') === BOOTH_ORIGIN,
+    '/ice allows the booth origin',
+  );
+  const foreign = await http('/ice', { headers: { origin: 'https://attacker.example' } });
+  check(foreign.status === 403, 'GET /ice refuses a foreign origin');
+  const plain = await http('/ice');
+  check(plain.status === 200, 'GET /ice still answers a client with no Origin');
   check(Array.isArray(body?.iceServers) && body.iceServers.length > 0, 'iceServers is non-empty');
   check(typeof body?.source === 'string', 'ice has a source field');
   check(
@@ -119,6 +127,30 @@ async function protocol() {
   a.send({ t: 'signal', room, data: { k: 'offer', sdp: 'x' } });
   const sig = await b.wait((m) => m.t === 'signal');
   check(sig.data?.k === 'offer', 'signal relayed to B');
+
+  // Membership is the authority: a socket that never joined must not be able
+  // to push SDP into somebody else's handshake.
+  const spy = await connect(RELAY);
+  await spy.wait((m) => m.t === 'welcome');
+  spy.send({ t: 'signal', room, data: { k: 'forged', sdp: 'evil' } });
+  let forged = false;
+  try {
+    await b.wait((m) => m.t === 'signal' && m.data?.k === 'forged', 800);
+    forged = true;
+  } catch {
+    /* dropped, as it must be */
+  }
+  check(!forged, 'an unjoined socket cannot signal into a room');
+  spy.close();
+
+  const malformed = await connect(RELAY);
+  await malformed.wait((m) => m.t === 'welcome');
+  malformed.send({ t: 'join', room: 'no' });
+  check(
+    (await malformed.wait((m) => m.t === 'error' || m.t === 'joined')).code === 'bad-code',
+    'a malformed room code is refused',
+  );
+  malformed.close();
 
   const c = await connect(RELAY);
   await c.wait((m) => m.t === 'welcome');
